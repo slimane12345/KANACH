@@ -1,0 +1,211 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Shop owner profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "shopName": { "type": "string" },
+        "referralCode": { "type": "string" },
+        "referredBy": { "type": "string" },
+        "referralCount": { "type": "number" },
+        "subscriptionStatus": { "type": "string" },
+        "internalCredit": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Referral": {
+      "title": "Referral",
+      "description": "Referral tracking document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "inviterId": { "type": "string" },
+        "inviteeId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "rewardGiven": { "type": "boolean" }
+      },
+      "required": ["inviterId", "inviteeId", "date", "rewardGiven"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Product in the shop",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "stock": { "type": "number" },
+        "lowStockThreshold": { "type": "number" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "price", "stock", "ownerId"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Recorded sale",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "totalPrice": { "type": "number" },
+        "profit": { "type": "number" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "quantity", "totalPrice", "ownerId", "createdAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer with credit account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "totalDebt": { "type": "number" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId", "totalDebt"]
+    },
+    "CreditTransaction": {
+      "title": "CreditTransaction",
+      "description": "Individual credit entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "amount": { "type": "number" },
+        "note": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["unpaid", "paid"] },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["customerId", "amount", "status", "ownerId"]
+    },
+    "DailyReport": {
+      "title": "DailyReport",
+      "description": "Daily business summary",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "shopId": { "type": "string" },
+        "date": { "type": "string", "description": "YYYY-MM-DD" },
+        "totalSales": { "type": "number" },
+        "transactions": { "type": "number" },
+        "productsSold": { "type": "number" },
+        "creditAdded": { "type": "number" },
+        "topProduct": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "quantity": { "type": "number" }
+          }
+        },
+        "yesterdaySales": { "type": "number" }
+      },
+      "required": ["shopId", "date", "totalSales", "transactions", "productsSold", "creditAdded"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "User subscription details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "shopId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "expired", "pending"] },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "plan": { "type": "string" },
+        "price": { "type": "number" }
+      },
+      "required": ["shopId", "status", "startDate", "endDate"]
+    },
+    "PaymentProof": {
+      "title": "PaymentProof",
+      "description": "Manual bank transfer proof",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "shopId": { "type": "string" },
+        "shopName": { "type": "string" },
+        "amount": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "reviewedBy": { "type": "string" },
+        "reviewedAt": { "type": "string", "format": "date-time" },
+        "rejectionReason": { "type": "string" }
+      },
+      "required": ["shopId", "amount", "imageUrl", "status", "createdAt"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "System notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "warning", "success"] },
+        "read": { "type": "boolean" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "targetType": { "type": "string", "enum": ["all", "specific"] },
+        "targetUserId": { "type": "string" },
+        "sentBy": { "type": "string" }
+      },
+      "required": ["title", "message", "type", "read", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Shop products"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales history"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer accounts"
+    },
+    "/credits/{creditId}": {
+      "schema": "CreditTransaction",
+      "description": "Credit transaction history"
+    },
+    "/referrals/{referralId}": {
+      "schema": "Referral",
+      "description": "Referral tracking"
+    },
+    "/daily_reports/{reportId}": {
+      "schema": "DailyReport",
+      "description": "Daily shop reports"
+    },
+    "/subscriptions/{subscriptionId}": {
+      "schema": "Subscription",
+      "description": "Shop subscriptions"
+    },
+    "/payment_proofs/{proofId}": {
+      "schema": "PaymentProof",
+      "description": "Payment proofs for manual subscription"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "AppNotification",
+      "description": "App notifications"
+    }
+  }
+}

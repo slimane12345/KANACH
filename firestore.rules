@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.ownerId;
+    }
+
+    function isNewDocOwner() {
+      return isAuthenticated() && request.auth.uid == request.resource.data.ownerId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "elegancecom71@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isModerator() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator' || isAdmin());
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string && data.email is string;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['name', 'price', 'stock', 'ownerId']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.price is number && data.price >= 0 &&
+             data.stock is number &&
+             data.ownerId is string;
+    }
+
+    function isValidSale(data) {
+      return data.keys().hasAll(['productId', 'quantity', 'totalPrice', 'ownerId', 'createdAt']) &&
+             data.productId is string &&
+             data.quantity is number && data.quantity > 0 &&
+             data.totalPrice is number && data.totalPrice >= 0 &&
+             data.ownerId is string;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['name', 'ownerId', 'totalDebt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.totalDebt is number &&
+             data.ownerId is string;
+    }
+
+    function isValidCredit(data) {
+      return data.keys().hasAll(['customerId', 'amount', 'status', 'ownerId']) &&
+             data.customerId is string &&
+             data.amount is number &&
+             data.status in ['unpaid', 'paid'] &&
+             data.ownerId is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated(); // Needed for referral lookup
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isModerator());
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isModerator();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated();
+      allow create: if isModerator();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /referrals/{referralId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.inviterId || request.auth.uid == resource.data.inviteeId || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.inviteeId;
+      allow update: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isNewDocOwner() && isValidProduct(request.resource.data);
+      allow update: if isDocOwner() && isNewDocOwner() && isValidProduct(request.resource.data);
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /sales/{saleId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isNewDocOwner() && isValidSale(request.resource.data);
+      allow update: if false; // Sales should be immutable for history integrity
+      allow delete: if isAdmin();
+    }
+
+    match /customers/{customerId} {
+      allow read: if true; // Publicly accessible via unique ID for QR Credit Page
+      allow create: if isNewDocOwner() && isValidCustomer(request.resource.data);
+      allow update: if isDocOwner() && isNewDocOwner() && isValidCustomer(request.resource.data);
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /credits/{creditId} {
+      allow read: if true; // Publicly accessible via unique ID/query for QR Credit Page
+      allow create: if isNewDocOwner() && isValidCredit(request.resource.data);
+      allow update: if isDocOwner() && isNewDocOwner() && isValidCredit(request.resource.data);
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /daily_reports/{reportId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.shopId || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.shopId;
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.shopId && request.auth.uid == request.resource.data.shopId;
+      allow delete: if isAdmin();
+    }
+
+    match /subscriptions/{subId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.shopId || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /payment_proofs/{proofId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.shopId || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.shopId;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

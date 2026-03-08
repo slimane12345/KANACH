@@ -1,0 +1,1931 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
+import SmartInventoryScan from './components/SmartInventoryScan';
+import { auth, db } from './firebase';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  User,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword
+} from 'firebase/auth';
+import { 
+  Phone,
+  MessageSquare,
+  Smartphone,
+  Lock,
+  UserPlus,
+  LogIn
+} from 'lucide-react';
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  addDoc, 
+  setDoc,
+  updateDoc, 
+  doc, 
+  deleteDoc,
+  getDoc,
+  getDocs,
+  Timestamp,
+  orderBy,
+  limit,
+  increment
+} from 'firebase/firestore';
+import { 
+  LayoutDashboard, 
+  ShoppingCart, 
+  Package, 
+  Users, 
+  Plus, 
+  Search, 
+  LogOut, 
+  TrendingUp, 
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  History,
+  ChevronRight,
+  ArrowLeft,
+  Gift,
+  Copy,
+  Share2,
+  Check,
+  ScanLine,
+  PlusCircle,
+  CreditCard,
+  Wallet,
+  QrCode,
+  Trash2,
+  Bell,
+  ArrowUpRight,
+  ArrowDownRight,
+  ShieldCheck
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { format, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  Cell
+} from 'recharts';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { Product, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification } from './types';
+import AdminDashboard from './components/AdminDashboard';
+import CustomerCreditPage from './components/CustomerCreditPage';
+import SubscriptionPage from './components/SubscriptionPage';
+import { QRCodeSVG } from 'qrcode.react';
+
+// Utility for tailwind classes
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+// --- Components ---
+
+export const Button = ({ 
+  children, 
+  className, 
+  variant = 'primary', 
+  ...props 
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost' }) => {
+  const variants = {
+    primary: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200',
+    secondary: 'bg-white text-emerald-900 border border-emerald-200 hover:bg-emerald-50 shadow-sm',
+    danger: 'bg-rose-500 text-white hover:bg-rose-600 shadow-rose-200',
+    ghost: 'bg-transparent text-emerald-600 hover:bg-emerald-50'
+  };
+
+  return (
+    <button 
+      className={cn(
+        'px-6 py-4 rounded-2xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2 text-lg shadow-md',
+        variants[variant],
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+
+export const Card = ({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn('bg-white rounded-3xl p-6 shadow-sm border border-emerald-50', className)} {...props}>
+    {children}
+  </div>
+);
+
+export const Input = ({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) => (
+  <div className="flex flex-col gap-2 w-full">
+    <label className="text-sm font-bold text-emerald-800 ml-2">{label}</label>
+    <input 
+      className="px-4 py-4 rounded-2xl border border-emerald-100 bg-emerald-50/30 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-lg"
+      {...props}
+    />
+  </div>
+);
+
+// --- Main App ---
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'credits' | 'dashboard' | 'referral' | 'report' | 'subscription'>('dashboard');
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [credits, setCredits] = useState<CreditTransaction[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [publicCreditId, setPublicCreditId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.startsWith('/credit/')) {
+      const id = path.split('/credit/')[1];
+      if (id) setPublicCreditId(id);
+    }
+  }, []);
+
+  // Phone + Password Auth State
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [authStep, setAuthStep] = useState<'method' | 'phone'>('method');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const qProducts = query(collection(db, 'products'), where('ownerId', '==', user.uid));
+    const unsubProducts = onSnapshot(qProducts, (snapshot) => {
+      setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+    });
+
+    const qSales = query(collection(db, 'sales'), where('ownerId', '==', user.uid), orderBy('createdAt', 'desc'), limit(100));
+    const unsubSales = onSnapshot(qSales, (snapshot) => {
+      setSales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
+    });
+
+    const qCustomers = query(collection(db, 'customers'), where('ownerId', '==', user.uid));
+    const unsubCustomers = onSnapshot(qCustomers, (snapshot) => {
+      setCustomers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer)));
+    });
+
+    const qCredits = query(collection(db, 'credits'), where('ownerId', '==', user.uid), orderBy('date', 'desc'));
+    const unsubCredits = onSnapshot(qCredits, (snapshot) => {
+      setCredits(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CreditTransaction)));
+    });
+
+    const unsubProfile = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        // Bootstrap admin role if email matches
+        if (user.email === 'elegancecom71@gmail.com' && data.role !== 'admin') {
+          updateDoc(doc(db, 'users', user.uid), { role: 'admin' });
+        }
+        setUserProfile({ uid: docSnap.id, ...data } as UserProfile);
+        setShowSetup(false);
+      } else {
+        setShowSetup(true);
+      }
+    });
+
+    // Check for daily report notification
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const qReport = query(
+      collection(db, 'daily_reports'),
+      where('shopId', '==', user.uid),
+      where('date', '==', todayStr)
+    );
+    const unsubReport = onSnapshot(qReport, (snapshot) => {
+      if (!snapshot.empty) {
+        const reportNotif: AppNotification = {
+          id: 'daily-report-' + todayStr,
+          title: 'تقرير اليوم واجد!',
+          message: 'شوف ملخص المبيعات ديالك ديال اليوم.',
+          type: 'info',
+          read: false,
+          timestamp: Timestamp.now()
+        };
+        setNotifications(prev => {
+          if (prev.some(n => n.id === reportNotif.id)) return prev;
+          return [reportNotif, ...prev];
+        });
+      }
+    });
+
+    return () => {
+      unsubProducts();
+      unsubSales();
+      unsubCustomers();
+      unsubCredits();
+      unsubProfile();
+      unsubReport();
+    };
+  }, [user]);
+
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error('Login failed', error);
+      if (error.code === 'auth/unauthorized-domain') {
+        alert('خطأ: هاد النطاق (Domain) ما مسموحش بيه فـ Firebase. خاصك تزيد هاد الرابط فـ Authorized Domains فـ Firebase Console.');
+      } else if (error.code === 'auth/operation-not-allowed') {
+        alert('خطأ: تسجيل الدخول بـ Google ما مفعلش فـ Firebase. خاصك تفعلو فـ Sign-in method فـ Firebase Console.');
+      } else {
+        alert('وقع مشكل فالدخول: ' + error.message);
+      }
+    }
+  };
+
+  const handleLogout = () => auth.signOut();
+
+  const handlePhoneAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (phoneNumber.length < 8 || password.length < 6) {
+      alert('الرقم خاص يكون صحيح وكلمة السر فيها على الأقل 6 حروف');
+      return;
+    }
+
+    setAuthLoading(true);
+    // Map phone to a dummy email format for Firebase Email/Pass Auth
+    const email = `${phoneNumber.replace(/\s+/g, '')}@kanach.app`;
+
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (error: any) {
+      console.error('Phone auth failed', error);
+      if (error.code === 'auth/user-not-found') {
+        alert('هاد الرقم ما كاينش، واش بغيتي تسجل حساب جديد؟');
+        setIsRegistering(true);
+      } else if (error.code === 'auth/wrong-password') {
+        alert('كلمة السر غلط، عاود جرب');
+      } else if (error.code === 'auth/email-already-in-use') {
+        alert('هاد الرقم ديجا مسجل، دخل بكلمة السر ديالك');
+        setIsRegistering(false);
+      } else {
+        alert('وقع مشكل: ' + error.message);
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  if (publicCreditId) {
+    return <CustomerCreditPage customerId={publicCreditId} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-emerald-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-white p-8 rounded-[40px] shadow-xl max-w-md w-full border border-emerald-100">
+          <div className="bg-emerald-100 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <Package className="w-10 h-10 text-emerald-600" />
+          </div>
+          <h1 className="text-3xl font-black text-emerald-900 mb-2">KANACH</h1>
+          <p className="text-emerald-700 mb-8 text-sm">كناش ديجيتال باش تنظم حانوتك بكل سهولة</p>
+
+          <AnimatePresence mode="wait">
+            {authStep === 'method' && (
+              <motion.div 
+                key="method"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-4"
+              >
+                <Button onClick={handleLogin} className="w-full py-5 text-lg bg-white text-emerald-900 border border-emerald-100 hover:bg-emerald-50 shadow-none">
+                  <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+                  دخول بـ Google
+                </Button>
+                <div className="flex items-center gap-4 my-4">
+                  <div className="h-px bg-emerald-100 flex-1"></div>
+                  <span className="text-emerald-300 text-xs font-bold">أو</span>
+                  <div className="h-px bg-emerald-100 flex-1"></div>
+                </div>
+                <Button onClick={() => setAuthStep('phone')} className="w-full py-5 text-lg">
+                  <Smartphone className="w-5 h-5" />
+                  دخول برقم الهاتف
+                </Button>
+              </motion.div>
+            )}
+
+            {authStep === 'phone' && (
+              <motion.div 
+                key="phone"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
+              >
+                <div className="text-right">
+                  <button onClick={() => setAuthStep('method')} className="text-emerald-600 text-sm font-bold flex items-center gap-1 mb-4">
+                    <ArrowLeft className="w-4 h-4" /> رجوع
+                  </button>
+                  
+                  <div className="space-y-4">
+                    <Input 
+                      label="رقم الهاتف" 
+                      placeholder="06XXXXXXXX" 
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                    />
+                    <Input 
+                      label="كلمة السر" 
+                      placeholder="******" 
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between">
+                    <button 
+                      onClick={() => setIsRegistering(!isRegistering)}
+                      className="text-emerald-600 text-xs font-bold underline"
+                    >
+                      {isRegistering ? 'عندي حساب ديجا' : 'ماعنديش حساب؟ تسجل دابا'}
+                    </button>
+                  </div>
+                </div>
+
+                <Button onClick={handlePhoneAuth} disabled={authLoading || !phoneNumber || !password} className="w-full py-5">
+                  {authLoading ? 'جاري التحميل...' : (isRegistering ? 'تسجيل حساب جديد' : 'دخول')}
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  }
+
+  if (showSetup && user) {
+    return <SetupView user={user} />;
+  }
+
+  if (userProfile?.role === 'admin' && isAdminMode) {
+    return <AdminDashboard adminUser={userProfile} onBackToApp={() => setIsAdminMode(false)} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F8FAF9] pb-24 font-sans text-emerald-950">
+      {/* Header */}
+      <header className="bg-white border-b border-emerald-50 px-6 py-4 sticky top-0 z-50 flex justify-between items-center shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="bg-emerald-600 p-2 rounded-xl">
+            <Package className="w-6 h-6 text-white" />
+          </div>
+          <span className="text-2xl font-black tracking-tight text-emerald-900">KANACH</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {notifications.some(n => !n.read) && (
+            <button 
+              onClick={() => setActiveTab('report')}
+              className="relative p-2 text-emerald-600"
+            >
+              <Bell className="w-6 h-6" />
+              <span className="absolute top-1 right-1 w-3 h-3 bg-rose-500 border-2 border-white rounded-full"></span>
+            </button>
+          )}
+          {userProfile?.role === 'admin' && (
+            <button 
+              onClick={() => setIsAdminMode(true)}
+              className="p-2 text-emerald-400 hover:text-emerald-600 transition-colors"
+              title="Admin Dashboard"
+            >
+              <LayoutDashboard className="w-6 h-6" />
+            </button>
+          )}
+          <button onClick={handleLogout} className="p-2 text-emerald-400 hover:text-rose-500 transition-colors">
+            <LogOut className="w-6 h-6" />
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-md mx-auto p-4 space-y-6">
+        <AnimatePresence mode="wait">
+          {activeTab === 'sales' && <SalesView products={products} sales={sales} customers={customers} user={user} />}
+          {activeTab === 'products' && <ProductsView products={products} user={user} />}
+          {activeTab === 'credits' && <CreditsView customers={customers} credits={credits} user={user} />}
+          {activeTab === 'referral' && <ReferralView userProfile={userProfile} user={user} />}
+          {activeTab === 'dashboard' && <DashboardView sales={sales} products={products} customers={customers} onOpenReport={() => setActiveTab('report')} onOpenSubscription={() => setActiveTab('subscription')} userProfile={userProfile} />}
+          {activeTab === 'report' && <DailyReportView sales={sales} credits={credits} user={user!} />}
+          {activeTab === 'subscription' && <SubscriptionPage userProfile={userProfile} onBack={() => setActiveTab('dashboard')} />}
+        </AnimatePresence>
+      </main>
+
+      {/* Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-emerald-50 px-2 py-3 flex justify-around items-center z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
+        <NavButton 
+          active={activeTab === 'sales'} 
+          onClick={() => setActiveTab('sales')} 
+          icon={<ShoppingCart />} 
+          label="مبيعات" 
+        />
+        <NavButton 
+          active={activeTab === 'products'} 
+          onClick={() => setActiveTab('products')} 
+          icon={<Package />} 
+          label="سلعة" 
+        />
+        <NavButton 
+          active={activeTab === 'credits'} 
+          onClick={() => setActiveTab('credits')} 
+          icon={<Users />} 
+          label="كريدي" 
+        />
+        <NavButton 
+          active={activeTab === 'referral'} 
+          onClick={() => setActiveTab('referral')} 
+          icon={<Gift />} 
+          label="دعوة" 
+        />
+        <NavButton 
+          active={activeTab === 'dashboard'} 
+          onClick={() => setActiveTab('dashboard')} 
+          icon={<LayoutDashboard />} 
+          label="حسابات" 
+        />
+      </nav>
+    </div>
+  );
+}
+
+function NavButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all duration-300",
+        active ? "text-emerald-600 bg-emerald-50" : "text-emerald-300"
+      )}
+    >
+      {React.cloneElement(icon as React.ReactElement, { className: "w-6 h-6" })}
+      <span className="text-xs font-bold">{label}</span>
+    </button>
+  );
+}
+
+// --- Views ---
+
+function SalesView({ products, sales, customers, user }: { products: Product[]; sales: Sale[]; customers: Customer[]; user: User }) {
+  const [cart, setCart] = useState<{ [productId: string]: number }>({});
+  const [search, setSearch] = useState('');
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'qr' | null>(null);
+  const [selectedCustomerForCredit, setSelectedCustomerForCredit] = useState<string>('');
+  const [isScanning, setIsScanning] = useState(false);
+  const [customProduct, setCustomProduct] = useState({ name: '', price: '' });
+  const [showCustomAdd, setShowCustomAdd] = useState(false);
+
+  // Calculate most sold products
+  const mostSoldIds = useMemo(() => {
+    const counts: { [id: string]: number } = {};
+    sales.forEach(s => {
+      counts[s.productId] = (counts[s.productId] || 0) + s.quantity;
+    });
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([id]) => id);
+  }, [sales]);
+
+  const sortedProducts = useMemo(() => {
+    return [...products].sort((a, b) => {
+      const aIndex = mostSoldIds.indexOf(a.id);
+      const bIndex = mostSoldIds.indexOf(b.id);
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return 0;
+    });
+  }, [products, mostSoldIds]);
+
+  const filteredProducts = sortedProducts.filter(p => 
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const cartItems = Object.entries(cart).map(([id, quantity]) => {
+    const product = products.find(p => p.id === id);
+    return { product, quantity };
+  }).filter(item => item.product !== undefined) as { product: Product; quantity: number }[];
+
+  const total = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
+
+  const addToCart = (product: Product) => {
+    setCart(prev => ({
+      ...prev,
+      [product.id]: (prev[product.id] || 0) + 1
+    }));
+  };
+
+  const removeFromCart = (productId: string) => {
+    setCart(prev => {
+      const newCart = { ...prev };
+      if (newCart[productId] > 1) {
+        newCart[productId] -= 1;
+      } else {
+        delete newCart[productId];
+      }
+      return newCart;
+    });
+  };
+
+  const handleCheckout = async () => {
+    if (cartItems.length === 0 || !paymentMethod) return;
+    if (paymentMethod === 'credit' && !selectedCustomerForCredit) {
+      alert('اختار الكليان لي غايدير الكريدي');
+      return;
+    }
+
+    try {
+      for (const item of cartItems) {
+        const totalPrice = item.product.price * item.quantity;
+        const profit = (item.product.price - item.product.costPrice) * item.quantity;
+
+        await addDoc(collection(db, 'sales'), {
+          productId: item.product.id,
+          productName: item.product.name,
+          quantity: item.quantity,
+          totalPrice,
+          profit,
+          paymentMethod,
+          customerId: paymentMethod === 'credit' ? selectedCustomerForCredit : null,
+          ownerId: user.uid,
+          createdAt: Timestamp.now()
+        });
+
+        // Update stock
+        await updateDoc(doc(db, 'products', item.product.id), {
+          stock: item.product.stock - item.quantity
+        });
+
+        // If credit, update customer debt
+        if (paymentMethod === 'credit') {
+          const customer = customers.find(c => c.id === selectedCustomerForCredit);
+          if (customer) {
+            await updateDoc(doc(db, 'customers', customer.id), {
+              totalDebt: customer.totalDebt + totalPrice,
+              updatedAt: new Date().toISOString()
+            });
+            
+            // Also add to credits collection
+            await addDoc(collection(db, 'credits'), {
+              customerId: customer.id,
+              customerName: customer.name,
+              amount: totalPrice,
+              note: `تقضية: ${item.product.name} x${item.quantity}`,
+              date: Timestamp.now(),
+              status: 'unpaid',
+              type: 'credit',
+              ownerId: user.uid
+            });
+          }
+        }
+      }
+
+      setCart({});
+      setIsCheckoutOpen(false);
+      setPaymentMethod(null);
+      setSelectedCustomerForCredit('');
+      alert('تمت العملية بنجاح!');
+    } catch (error) {
+      console.error('Checkout failed', error);
+      alert('وقع مشكل فالتسجيل');
+    }
+  };
+
+  const handleAddCustom = async () => {
+    if (!customProduct.name || !customProduct.price) return;
+    const price = Number(customProduct.price);
+    
+    try {
+      // For custom products, we just record a sale without a linked product or with a dummy one
+      // In this case, let's just add it to the cart as a temporary item if we had a way, 
+      // but the current schema relies on productId. 
+      // Let's create a "Custom" product if it doesn't exist or just alert.
+      // Better: Add it to the cart with a special ID or just record it immediately.
+      
+      await addDoc(collection(db, 'sales'), {
+        productId: 'custom',
+        productName: customProduct.name,
+        quantity: 1,
+        totalPrice: price,
+        profit: price * 0.1, // Assume 10% profit for custom items
+        paymentMethod: 'cash',
+        ownerId: user.uid,
+        createdAt: Timestamp.now()
+      });
+
+      setCustomProduct({ name: '', price: '' });
+      setShowCustomAdd(false);
+      alert('تم تسجيل البيع');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-140px)] -mt-2">
+      {/* Search & Scan */}
+      <div className="flex gap-2 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 w-5 h-5" />
+          <input 
+            className="w-full pl-12 pr-4 py-4 rounded-2xl border border-emerald-100 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg"
+            placeholder="قلب على السلعة..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <button 
+          onClick={() => setIsScanning(!isScanning)}
+          className={cn(
+            "p-4 rounded-2xl border transition-all active:scale-90",
+            isScanning ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-emerald-100 text-emerald-600 shadow-sm"
+          )}
+        >
+          <Smartphone className="w-6 h-6" />
+        </button>
+      </div>
+
+      {isScanning && (
+        <div className="bg-slate-900 rounded-3xl p-8 mb-4 text-center space-y-4 animate-pulse">
+          <div className="w-48 h-32 border-2 border-dashed border-emerald-500 mx-auto rounded-xl flex items-center justify-center">
+            <div className="w-full h-0.5 bg-emerald-500 animate-bounce"></div>
+          </div>
+          <p className="text-white font-bold">جاري مسح الباركود...</p>
+          <Button onClick={() => setIsScanning(false)} variant="ghost" className="text-white hover:bg-white/10">إلغاء</Button>
+        </div>
+      )}
+
+      {/* Product Grid */}
+      <div className="flex-1 overflow-y-auto pb-4">
+        <div className="grid grid-cols-2 gap-3">
+          <button 
+            onClick={() => setShowCustomAdd(true)}
+            className="bg-emerald-50 border-2 border-dashed border-emerald-200 p-4 rounded-[32px] flex flex-col items-center justify-center gap-2 text-emerald-600 hover:bg-emerald-100 transition-colors h-32"
+          >
+            <PlusCircle className="w-8 h-8" />
+            <span className="font-bold text-sm">سلعة خرى</span>
+          </button>
+
+          {filteredProducts.map(product => (
+            <button 
+              key={product.id}
+              onClick={() => addToCart(product)}
+              className="bg-white p-4 rounded-[32px] border border-emerald-50 shadow-sm flex flex-col justify-between items-start active:scale-95 transition-all h-32 relative overflow-hidden group"
+            >
+              <div className="absolute top-0 right-0 p-2 opacity-10 group-active:opacity-30 transition-opacity">
+                <Package className="w-12 h-12" />
+              </div>
+              <div className="font-black text-slate-800 text-lg leading-tight text-left w-full truncate">
+                {product.name}
+              </div>
+              <div className="flex justify-between items-end w-full">
+                <div className="text-emerald-600 font-black text-xl">
+                  {product.price} <span className="text-xs font-bold opacity-60">DH</span>
+                </div>
+                <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl">
+                  <Plus className="w-4 h-4" />
+                </div>
+              </div>
+              {cart[product.id] && (
+                <div className="absolute top-2 right-2 bg-rose-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-lg">
+                  {cart[product.id]}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Cart Summary & Checkout */}
+      <AnimatePresence>
+        {cartItems.length > 0 && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="bg-white border-t border-emerald-100 rounded-t-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] p-6 -mx-4 space-y-4"
+          >
+            <div className="flex justify-between items-center px-2">
+              <div className="flex items-center gap-2">
+                <div className="bg-emerald-100 p-2 rounded-xl text-emerald-600">
+                  <ShoppingCart className="w-5 h-5" />
+                </div>
+                <span className="font-black text-slate-800">{cartItems.length} سلع</span>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">المجموع</p>
+                <p className="text-3xl font-black text-emerald-900">{total} DH</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <Button 
+                onClick={() => setIsCheckoutOpen(true)}
+                className="flex-1 py-5 text-xl rounded-[24px]"
+              >
+                خلاص دابا
+              </Button>
+              <button 
+                onClick={() => setCart({})}
+                className="bg-rose-50 text-rose-500 p-5 rounded-[24px] active:scale-90 transition-transform"
+              >
+                <Trash2 className="w-6 h-6" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Checkout Modal */}
+      {isCheckoutOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end justify-center">
+          <motion.div 
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            className="bg-white w-full max-w-md rounded-t-[50px] p-8 space-y-8 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-black text-slate-900">تأكيد الخلاص</h3>
+              <button onClick={() => setIsCheckoutOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl">
+                <XCircle className="w-6 h-6 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Cart Items List */}
+            <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
+              {cartItems.map(item => (
+                <div key={item.product.id} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl">
+                  <div className="flex items-center gap-3">
+                    <div className="font-bold text-slate-800">{item.product.name}</div>
+                    <div className="text-slate-400 text-sm">x{item.quantity}</div>
+                  </div>
+                  <div className="font-black text-emerald-600">{item.product.price * item.quantity} DH</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-emerald-50 p-6 rounded-3xl flex justify-between items-center">
+              <span className="text-emerald-700 font-bold">المجموع الكلي</span>
+              <span className="text-3xl font-black text-emerald-950">{total} DH</span>
+            </div>
+
+            {/* Payment Methods */}
+            <div className="space-y-4">
+              <p className="font-bold text-slate-500 text-sm uppercase tracking-widest text-center">طريقة الخلاص</p>
+              <div className="grid grid-cols-3 gap-3">
+                <button 
+                  onClick={() => setPaymentMethod('cash')}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-3xl border-2 transition-all",
+                    paymentMethod === 'cash' ? "bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-200" : "bg-white border-slate-100 text-slate-600"
+                  )}
+                >
+                  <Wallet className="w-6 h-6" />
+                  <span className="font-bold text-xs">نقدا</span>
+                </button>
+                <button 
+                  onClick={() => setPaymentMethod('credit')}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-3xl border-2 transition-all",
+                    paymentMethod === 'credit' ? "bg-rose-500 border-rose-500 text-white shadow-lg shadow-rose-200" : "bg-white border-slate-100 text-slate-600"
+                  )}
+                >
+                  <CreditCard className="w-6 h-6" />
+                  <span className="font-bold text-xs">كريدي</span>
+                </button>
+                <button 
+                  onClick={() => setPaymentMethod('qr')}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-3xl border-2 transition-all",
+                    paymentMethod === 'qr' ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200" : "bg-white border-slate-100 text-slate-600"
+                  )}
+                >
+                  <QrCode className="w-6 h-6" />
+                  <span className="font-bold text-xs">QR</span>
+                </button>
+              </div>
+            </div>
+
+            {paymentMethod === 'credit' && (
+              <div className="space-y-3 animate-in slide-in-from-top-4">
+                <label className="text-sm font-bold text-rose-600 ml-2">اختار الكليان</label>
+                <select 
+                  className="w-full p-4 rounded-2xl border border-rose-100 bg-rose-50/30 text-lg font-bold"
+                  value={selectedCustomerForCredit}
+                  onChange={(e) => setSelectedCustomerForCredit(e.target.value)}
+                >
+                  <option value="">-- اختار كليان --</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.totalDebt} DH)</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <Button 
+              onClick={handleCheckout} 
+              disabled={!paymentMethod}
+              className={cn(
+                "w-full py-6 text-xl rounded-[28px]",
+                !paymentMethod && "opacity-50 grayscale"
+              )}
+            >
+              تأكيد العملية
+            </Button>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Custom Add Modal */}
+      {showCustomAdd && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-[40px] p-8 max-w-sm w-full space-y-6"
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-black text-slate-900">سلعة خرى</h3>
+              <button onClick={() => setShowCustomAdd(false)} className="p-2 hover:bg-slate-100 rounded-xl">
+                <XCircle className="w-6 h-6 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <Input 
+                label="سمية السلعة" 
+                placeholder="مثلا: خبزة، بيضة..." 
+                value={customProduct.name}
+                onChange={e => setCustomProduct({...customProduct, name: e.target.value})}
+              />
+              <Input 
+                label="الثمن (DH)" 
+                type="number"
+                placeholder="0.00" 
+                value={customProduct.price}
+                onChange={e => setCustomProduct({...customProduct, price: e.target.value})}
+              />
+              <Button onClick={handleAddCustom} className="w-full">تسجيل البيع</Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductsView({ products, user }: { products: Product[]; user: User }) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [isScanMode, setIsScanMode] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    price: '',
+    costPrice: '',
+    stock: '',
+    lowStockThreshold: '5',
+    barcode: ''
+  });
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'products'), {
+        name: formData.name,
+        price: Number(formData.price),
+        costPrice: Number(formData.costPrice),
+        stock: Number(formData.stock),
+        lowStockThreshold: Number(formData.lowStockThreshold),
+        barcode: formData.barcode,
+        ownerId: user.uid,
+        createdAt: Timestamp.now()
+      });
+      setIsAdding(false);
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '' });
+    } catch (error) {
+      console.error('Add product failed', error);
+    }
+  };
+
+  if (isScanMode) {
+    return <SmartInventoryScan user={user} products={products} onFinish={() => setIsScanMode(false)} />;
+  }
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-6"
+    >
+      <div className="flex justify-between items-center">
+        <h2 className="text-3xl font-black text-emerald-900">السلعة</h2>
+        <div className="flex gap-2">
+          <Button onClick={() => setIsScanMode(true)} variant="secondary" className="px-4 py-3 rounded-xl">
+            <ScanLine className="w-6 h-6" />
+          </Button>
+          <Button onClick={() => setIsAdding(true)} variant="primary" className="px-4 py-3 rounded-xl">
+            <Plus className="w-6 h-6" />
+          </Button>
+        </div>
+      </div>
+
+      {isAdding && (
+        <Card className="space-y-4">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-xl font-bold">زيد سلعة جديدة</h3>
+            <button onClick={() => setIsAdding(false)}><XCircle className="text-rose-400" /></button>
+          </div>
+          <form onSubmit={handleAdd} className="space-y-4">
+            <Input 
+              label="سمية السلعة" 
+              placeholder="مثلا: حليب، خبز..." 
+              value={formData.name}
+              onChange={e => setFormData({...formData, name: e.target.value})}
+              required
+            />
+            <Input 
+              label="الباركود (اختياري)" 
+              placeholder="سكاني الباركود هنا..." 
+              value={formData.barcode}
+              onChange={e => setFormData({...formData, barcode: e.target.value})}
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <Input 
+                label="ثمن البيع (DH)" 
+                type="number" 
+                value={formData.price}
+                onChange={e => setFormData({...formData, price: e.target.value})}
+                required
+              />
+              <Input 
+                label="ثمن الشراء (DH)" 
+                type="number" 
+                value={formData.costPrice}
+                onChange={e => setFormData({...formData, costPrice: e.target.value})}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input 
+                label="الكمية (Stock)" 
+                type="number" 
+                value={formData.stock}
+                onChange={e => setFormData({...formData, stock: e.target.value})}
+                required
+              />
+              <Input 
+                label="تنبيه (Stock Low)" 
+                type="number" 
+                value={formData.lowStockThreshold}
+                onChange={e => setFormData({...formData, lowStockThreshold: e.target.value})}
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full">حفظ السلعة</Button>
+          </form>
+        </Card>
+      )}
+
+      <div className="grid gap-4">
+        {products.map(product => (
+          <Card key={product.id} className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className={cn(
+                "p-3 rounded-2xl",
+                product.stock <= product.lowStockThreshold ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"
+              )}>
+                <Package className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-bold text-lg">{product.name}</div>
+                <div className="text-emerald-500 font-mono text-sm">{product.price} DH</div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className={cn(
+                "font-black text-xl",
+                product.stock <= product.lowStockThreshold ? "text-rose-600" : "text-emerald-900"
+              )}>
+                {product.stock}
+              </div>
+              <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-300">الكمية</div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+function CreditsView({ customers, credits, user }: { customers: Customer[]; credits: CreditTransaction[]; user: User }) {
+  const [view, setView] = useState<'list' | 'profile' | 'add-customer'>('list');
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [isAddingCredit, setIsAddingCredit] = useState(false);
+  
+  const [customerForm, setCustomerForm] = useState({ name: '', phone: '' });
+  const [creditForm, setCreditForm] = useState({ amount: '', note: '' });
+
+  const totalGlobalDebt = customers.reduce((acc, curr) => acc + curr.totalDebt, 0);
+  const sortedCustomers = [...customers].sort((a, b) => b.totalDebt - a.totalDebt);
+
+  const handleAddCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'customers'), {
+        name: customerForm.name,
+        phone: customerForm.phone,
+        totalDebt: 0,
+        ownerId: user.uid,
+        createdAt: Timestamp.now()
+      });
+      setView('list');
+      setCustomerForm({ name: '', phone: '' });
+    } catch (error) {
+      console.error('Add customer failed', error);
+    }
+  };
+
+  const handleAddCredit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer) return;
+    const amount = Number(creditForm.amount);
+    try {
+      await addDoc(collection(db, 'credits'), {
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        amount: amount,
+        note: creditForm.note,
+        date: Timestamp.now(),
+        status: 'unpaid',
+        type: 'credit',
+        ownerId: user.uid
+      });
+
+      // Update customer total debt
+      await updateDoc(doc(db, 'customers', selectedCustomer.id), {
+        totalDebt: selectedCustomer.totalDebt + amount,
+        updatedAt: new Date().toISOString()
+      });
+
+      setIsAddingCredit(false);
+      setCreditForm({ amount: '', note: '' });
+      // Refresh selected customer from local state or let snapshot handle it
+      const updatedCust = customers.find(c => c.id === selectedCustomer.id);
+      if (updatedCust) setSelectedCustomer(updatedCust);
+    } catch (error) {
+      console.error('Add credit failed', error);
+    }
+  };
+
+  const markAsPaid = async (credit: CreditTransaction) => {
+    if (!selectedCustomer) return;
+    try {
+      await updateDoc(doc(db, 'credits', credit.id), { status: 'paid', type: 'payment' });
+      await updateDoc(doc(db, 'customers', selectedCustomer.id), {
+        totalDebt: Math.max(0, selectedCustomer.totalDebt - credit.amount),
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Mark as paid failed', error);
+    }
+  };
+
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  
+  const customerCredits = credits.filter(c => c.customerId === selectedCustomer?.id);
+
+  const shareUrl = `${window.location.origin}/credit/${selectedCustomer?.id}`;
+
+  const handleShareWhatsApp = () => {
+    if (!selectedCustomer) return;
+    const message = `السلام عليكم ${selectedCustomer.name}،\n\nعندك تحديث جديد فالحساب ديالك.\n\nالكريدي الحالي: ${selectedCustomer.totalDebt} DH\n\nتقدر تشوف التفاصيل هنا:\n${shareUrl}`;
+    window.open(`https://wa.me/${selectedCustomer.phone?.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl);
+    alert('تم نسخ الرابط!');
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-6"
+    >
+      {view === 'list' && (
+        <>
+          <div className="flex justify-between items-center">
+            <h2 className="text-3xl font-black text-emerald-900">الكريدي</h2>
+            <Button onClick={() => setView('add-customer')} variant="primary" className="px-4 py-3 rounded-xl">
+              <Plus className="w-6 h-6" />
+            </Button>
+          </div>
+
+          <Card className="bg-rose-500 text-white border-none">
+            <div className="text-rose-100 font-bold mb-1">مجموع الكريدي عند الناس</div>
+            <div className="text-4xl font-black">{totalGlobalDebt} DH</div>
+          </Card>
+
+          <div className="space-y-4">
+            <h3 className="font-bold text-emerald-800 ml-2">كليان لي عندهم الكريدي</h3>
+            <div className="grid gap-3">
+              {sortedCustomers.map(customer => (
+                <button 
+                  key={customer.id}
+                  onClick={() => {
+                    setSelectedCustomer(customer);
+                    setView('profile');
+                  }}
+                  className="bg-white p-5 rounded-3xl border border-emerald-50 shadow-sm flex justify-between items-center active:bg-emerald-50 transition-colors text-right"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="bg-rose-100 p-3 rounded-2xl text-rose-600">
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-lg">{customer.name}</div>
+                      <div className="text-emerald-400 text-xs">{customer.phone || 'بلا نمرة'}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-rose-600 font-black text-xl">{customer.totalDebt} DH</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {view === 'add-customer' && (
+        <Card className="space-y-6">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setView('list')} className="p-2 hover:bg-emerald-50 rounded-xl">
+              <ArrowLeft className="w-6 h-6 text-emerald-600" />
+            </button>
+            <h3 className="text-xl font-bold">زيد كليان جديد</h3>
+          </div>
+          <form onSubmit={handleAddCustomer} className="space-y-4">
+            <Input 
+              label="سمية الكليان" 
+              placeholder="مثلا: سي محمد..." 
+              value={customerForm.name}
+              onChange={e => setCustomerForm({...customerForm, name: e.target.value})}
+              required
+            />
+            <Input 
+              label="نمرة التلفون (اختياري)" 
+              placeholder="06..." 
+              value={customerForm.phone}
+              onChange={e => setCustomerForm({...customerForm, phone: e.target.value})}
+            />
+            <Button type="submit" className="w-full">حفظ الكليان</Button>
+          </form>
+        </Card>
+      )}
+
+      {view === 'profile' && selectedCustomer && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setView('list')} className="p-2 hover:bg-emerald-50 rounded-xl">
+              <ArrowLeft className="w-6 h-6 text-emerald-600" />
+            </button>
+            <h3 className="text-xl font-bold">{selectedCustomer.name}</h3>
+          </div>
+
+          <Card className="bg-emerald-900 text-white border-none flex justify-between items-center">
+            <div>
+              <div className="text-emerald-300 font-bold text-sm">الكريدي لي عليه</div>
+              <div className="text-4xl font-black">{selectedCustomer.totalDebt} DH</div>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setIsQRModalOpen(true)}
+                className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-colors"
+                title="QR Code"
+              >
+                <Share2 className="w-6 h-6" />
+              </button>
+              <Button 
+                onClick={() => setIsAddingCredit(true)}
+                variant="primary" 
+                className="bg-emerald-500 hover:bg-emerald-400 px-4 py-3"
+              >
+                <Plus className="w-6 h-6" />
+              </Button>
+            </div>
+          </Card>
+
+          {isQRModalOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="bg-white rounded-[40px] p-8 max-w-sm w-full space-y-6 text-center"
+              >
+                <div className="flex justify-between items-center">
+                  <h3 className="text-xl font-black text-slate-900">رابط الحساب</h3>
+                  <button onClick={() => setIsQRModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl">
+                    <XCircle className="w-6 h-6 text-slate-400" />
+                  </button>
+                </div>
+
+                <div className="bg-slate-50 p-6 rounded-3xl flex justify-center">
+                  <QRCodeSVG value={shareUrl} size={200} />
+                </div>
+
+                <div className="space-y-3">
+                  <Button onClick={handleShareWhatsApp} className="w-full bg-[#25D366] hover:bg-[#128C7E] border-none">
+                    <MessageSquare className="w-5 h-5" />
+                    إرسال فـ WhatsApp
+                  </Button>
+                  <Button onClick={handleCopyLink} variant="secondary" className="w-full">
+                    <Copy className="w-5 h-5" />
+                    نسخ الرابط
+                  </Button>
+                </div>
+                
+                <p className="text-[10px] text-slate-400 font-bold uppercase">
+                  {shareUrl}
+                </p>
+              </motion.div>
+            </div>
+          )}
+
+          {isAddingCredit && (
+            <Card className="space-y-4 border-2 border-emerald-500">
+              <div className="flex justify-between items-center">
+                <h4 className="font-bold">سجل كريدي جديد</h4>
+                <button onClick={() => setIsAddingCredit(false)}><XCircle className="text-rose-400" /></button>
+              </div>
+              <form onSubmit={handleAddCredit} className="space-y-4">
+                <Input 
+                  label="المبلغ (DH)" 
+                  type="number" 
+                  value={creditForm.amount}
+                  onChange={e => setCreditForm({...creditForm, amount: e.target.value})}
+                  required
+                />
+                <div className="flex flex-col gap-2 w-full">
+                  <label className="text-sm font-bold text-emerald-800 ml-2">تفاصيل التقضية (اختياري)</label>
+                  <textarea 
+                    className="px-4 py-4 rounded-2xl border border-emerald-100 bg-emerald-50/30 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-lg min-h-[100px] resize-none"
+                    placeholder="مثلا: سكر، أتاي، زيت..." 
+                    value={creditForm.note}
+                    onChange={e => setCreditForm({...creditForm, note: e.target.value})}
+                  />
+                </div>
+                <Button type="submit" className="w-full">تأكيد</Button>
+              </form>
+            </Card>
+          )}
+
+          <div className="space-y-4">
+            <h4 className="font-bold text-emerald-800 ml-2">تاريخ الكريدي</h4>
+            <div className="grid gap-3">
+              {customerCredits.map(credit => (
+                <div 
+                  key={credit.id}
+                  className={cn(
+                    "bg-white p-5 rounded-3xl border shadow-sm flex justify-between items-center",
+                    credit.status === 'paid' ? "opacity-50 border-emerald-100" : "border-rose-50"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "p-3 rounded-2xl",
+                      credit.status === 'paid' ? "bg-emerald-50 text-emerald-400" : "bg-rose-50 text-rose-500"
+                    )}>
+                      {credit.status === 'paid' ? <CheckCircle2 /> : <History />}
+                    </div>
+                    <div>
+                      <div className="font-bold">{credit.amount} DH</div>
+                      <div className="text-xs text-emerald-400 mt-1 whitespace-pre-wrap">
+                        {credit.note || 'بلا ملاحظة'}
+                      </div>
+                      <div className="text-[10px] text-emerald-300 mt-1">
+                        {format((credit.date as any).toDate ? (credit.date as any).toDate() : new Date(credit.date), 'dd/MM HH:mm')}
+                      </div>
+                    </div>
+                  </div>
+                  {credit.status === 'unpaid' && (
+                    <button 
+                      onClick={() => markAsPaid(credit)}
+                      className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-xl font-bold text-sm"
+                    >
+                      خلاص
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function SetupView({ user }: { user: User }) {
+  const [shopName, setShopName] = useState('');
+  const [referralCode, setReferralCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      let inviterId = '';
+      if (referralCode) {
+        const q = query(collection(db, 'users'), where('referralCode', '==', referralCode.toUpperCase()), limit(1));
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.empty) {
+          setError('كود الدعوة ماشي صحيح');
+          setLoading(false);
+          return;
+        }
+        inviterId = querySnapshot.docs[0].id;
+      }
+
+      const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      await setDoc(doc(db, 'users', user.uid), {
+        uid: user.uid,
+        email: user.email,
+        shopName,
+        referralCode: myReferralCode,
+        referredBy: inviterId || null,
+        referralCount: 0,
+        subscriptionStatus: 'active',
+        internalCredit: 0,
+        createdAt: Timestamp.now()
+      });
+
+      if (inviterId) {
+        // Reward inviter
+        await updateDoc(doc(db, 'users', inviterId), {
+          referralCount: increment(1),
+          internalCredit: increment(50) // 50 DH credit for referral
+        });
+
+        // Record referral
+        await addDoc(collection(db, 'referrals'), {
+          inviterId,
+          inviteeId: user.uid,
+          date: Timestamp.now(),
+          rewardGiven: true
+        });
+      }
+    } catch (err) {
+      console.error('Setup failed', err);
+      setError('وقع مشكل، عاود جرب');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center p-6 text-center">
+      <Card className="max-w-md w-full space-y-8 p-10">
+        <div className="bg-emerald-100 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto">
+          <Package className="w-10 h-10 text-emerald-600" />
+        </div>
+        <h2 className="text-3xl font-black text-emerald-900">مرحبا بك فـ KANACH</h2>
+        <p className="text-emerald-600">كمل المعلومات ديالك باش تبدا</p>
+        
+        <form onSubmit={handleSetup} className="space-y-6 text-right">
+          <Input 
+            label="سمية الحانوت" 
+            placeholder="مثلا: حانوت البركة" 
+            value={shopName}
+            onChange={e => setShopName(e.target.value)}
+            required
+          />
+          <Input 
+            label="كود الدعوة (إلى عندك)" 
+            placeholder="مثلا: AB12CD" 
+            value={referralCode}
+            onChange={e => setReferralCode(e.target.value)}
+          />
+          {error && <p className="text-rose-500 text-sm font-bold">{error}</p>}
+          <Button type="submit" className="w-full py-5" disabled={loading}>
+            {loading ? 'جاري الحفظ...' : 'بدا دابا'}
+          </Button>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+function ReferralView({ userProfile, user }: { userProfile: UserProfile | null; user: User }) {
+  const [copied, setCopied] = useState(false);
+  const [referredUsers, setReferredUsers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'referrals'), where('inviterId', '==', user.uid), orderBy('date', 'desc'));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setReferredUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return unsub;
+  }, [user]);
+
+  const handleCopy = () => {
+    if (userProfile?.referralCode) {
+      navigator.clipboard.writeText(userProfile.referralCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleShare = () => {
+    if (userProfile?.referralCode) {
+      const text = `خدم بـ KANACH باش تنظم حانوتك وتتبع مبيعاتك. استعمل الكود ديالي واستافد: ${userProfile.referralCode}\nhttps://kanach.app`;
+      if (navigator.share) {
+        navigator.share({
+          title: 'دعوة لـ KANACH',
+          text: text,
+          url: window.location.href
+        });
+      } else {
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`);
+      }
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-6"
+    >
+      <h2 className="text-3xl font-black text-emerald-900">ربح معانا</h2>
+      
+      <Card className="bg-emerald-900 text-white border-none p-8 text-center space-y-4">
+        <div className="bg-emerald-800/50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-2">
+          <Gift className="w-8 h-8 text-emerald-400" />
+        </div>
+        <h3 className="text-xl font-bold">استدعي صحابك وربح</h3>
+        <p className="text-emerald-300 text-sm">على كل واحد دخل بالكود ديالك، غادي تربح 50 DH رصيد فالتطبيق</p>
+        
+        <div className="bg-white/10 p-6 rounded-3xl border border-white/10 mt-6">
+          <div className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-2">الكود ديالك</div>
+          <div className="text-4xl font-black tracking-widest mb-6">{userProfile?.referralCode}</div>
+          <div className="flex gap-3">
+            <button 
+              onClick={handleCopy}
+              className="flex-1 bg-white text-emerald-900 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all"
+            >
+              {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+              {copied ? 'تم النسخ' : 'نسخ'}
+            </button>
+            <button 
+              onClick={handleShare}
+              className="flex-1 bg-emerald-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all"
+            >
+              <Share2 className="w-5 h-5" />
+              بارطاجي
+            </button>
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="text-center p-6">
+          <div className="text-emerald-400 text-xs font-bold mb-1">ناس لي دخلتي</div>
+          <div className="text-3xl font-black text-emerald-900">{userProfile?.referralCount || 0}</div>
+        </Card>
+        <Card className="text-center p-6">
+          <div className="text-emerald-400 text-xs font-bold mb-1">الرصيد المربوح</div>
+          <div className="text-3xl font-black text-emerald-900">{userProfile?.internalCredit || 0} DH</div>
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="font-bold text-emerald-800 ml-2">تاريخ الدعوات</h3>
+        <div className="grid gap-3">
+          {referredUsers.length === 0 ? (
+            <div className="text-center py-10 text-emerald-300 italic">مازال ما دخل حتى واحد بالكود ديالك</div>
+          ) : (
+            referredUsers.map(ref => (
+              <Card key={ref.id} className="flex justify-between items-center p-5">
+                <div className="flex items-center gap-3">
+                  <div className="bg-emerald-100 p-3 rounded-2xl text-emerald-600">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="font-bold">كليان جديد دخل</div>
+                    <div className="text-xs text-emerald-400">
+                      {format((ref.date as any).toDate ? (ref.date as any).toDate() : new Date(ref.date), 'dd/MM/yyyy')}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-emerald-600 font-black">+50 DH</div>
+              </Card>
+            ))
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function DailyReportView({ sales, credits, user }: { sales: Sale[]; credits: CreditTransaction[]; user: User }) {
+  const [report, setReport] = useState<DailyReport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const q = query(
+      collection(db, 'daily_reports'), 
+      where('shopId', '==', user.uid),
+      where('date', '==', todayStr),
+      limit(1)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setReport({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as DailyReport);
+        setLoading(false);
+      } else {
+        // If no report exists, we calculate it on the fly for the UI
+        calculateAndSaveReport();
+      }
+    });
+
+    return unsub;
+  }, [user.uid, sales, credits]);
+
+  const calculateAndSaveReport = async () => {
+    const today = startOfDay(new Date());
+    const yesterday = startOfDay(new Date(Date.now() - 86400000));
+    const todayStr = format(today, 'yyyy-MM-dd');
+
+    const todaySales = sales.filter(s => {
+      const d = (s.createdAt as any).toDate ? (s.createdAt as any).toDate() : new Date(s.createdAt);
+      return d >= today;
+    });
+
+    const yesterdaySales = sales.filter(s => {
+      const d = (s.createdAt as any).toDate ? (s.createdAt as any).toDate() : new Date(s.createdAt);
+      return d >= yesterday && d < today;
+    });
+
+    const todayCredits = credits.filter(c => {
+      const d = (c.date as any).toDate ? (c.date as any).toDate() : new Date(c.date);
+      return d >= today && c.type === 'credit';
+    });
+
+    const totalSales = todaySales.reduce((acc, curr) => acc + curr.totalPrice, 0);
+    const yesterdayTotal = yesterdaySales.reduce((acc, curr) => acc + curr.totalPrice, 0);
+    const transactions = todaySales.length;
+    const productsSold = todaySales.reduce((acc, curr) => acc + curr.quantity, 0);
+    const creditAdded = todayCredits.reduce((acc, curr) => acc + curr.amount, 0);
+
+    // Find top product
+    const productCounts: { [name: string]: number } = {};
+    todaySales.forEach(s => {
+      productCounts[s.productName] = (productCounts[s.productName] || 0) + s.quantity;
+    });
+
+    let topProductName = 'لا يوجد';
+    let topProductQty = 0;
+    Object.entries(productCounts).forEach(([name, qty]) => {
+      if (qty > topProductQty) {
+        topProductQty = qty;
+        topProductName = name;
+      }
+    });
+
+    const reportData = {
+      shopId: user.uid,
+      date: todayStr,
+      totalSales,
+      transactions,
+      productsSold,
+      creditAdded,
+      topProduct: {
+        name: topProductName,
+        quantity: topProductQty
+      },
+      yesterdaySales: yesterdayTotal
+    };
+
+    try {
+      // Check if report already exists to update or add
+      const q = query(
+        collection(db, 'daily_reports'),
+        where('shopId', '==', user.uid),
+        where('date', '==', todayStr)
+      );
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        await addDoc(collection(db, 'daily_reports'), reportData);
+      } else {
+        await updateDoc(doc(db, 'daily_reports', snap.docs[0].id), reportData);
+      }
+    } catch (err) {
+      console.error('Failed to save report', err);
+    }
+    setLoading(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-4">
+        <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-emerald-600 font-bold">جاري تحضير التقرير...</p>
+      </div>
+    );
+  }
+
+  if (!report) return null;
+
+  const diff = report.totalSales - (report.yesterdaySales || 0);
+  const isUp = diff >= 0;
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="space-y-6 pb-12"
+    >
+      <div className="text-center space-y-2">
+        <div className="bg-emerald-100 w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 text-emerald-600">
+          <TrendingUp className="w-8 h-8" />
+        </div>
+        <h2 className="text-3xl font-black text-emerald-900">تقرير اليوم</h2>
+        <p className="text-emerald-500 font-bold">{format(new Date(), 'dd MMMM yyyy')}</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        {/* Main Sales Card */}
+        <Card className="bg-emerald-600 text-white border-none p-8 text-center space-y-4 shadow-xl shadow-emerald-100">
+          <p className="text-emerald-100 font-bold uppercase tracking-widest text-xs">مجموع المبيعات</p>
+          <div className="text-5xl font-black">{report.totalSales} <span className="text-xl opacity-60">DH</span></div>
+          
+          <div className="pt-4 border-t border-emerald-500/30 flex justify-between items-center">
+            <div className="text-left">
+              <p className="text-[10px] text-emerald-200 uppercase font-bold">البارح</p>
+              <p className="font-bold">{report.yesterdaySales || 0} DH</p>
+            </div>
+            <div className={cn(
+              "flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold",
+              isUp ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+            )}>
+              {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+              {Math.abs(diff)} DH
+            </div>
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Card className="p-6 text-center space-y-2">
+            <div className="bg-blue-50 w-10 h-10 rounded-xl flex items-center justify-center mx-auto text-blue-600">
+              <ShoppingCart className="w-5 h-5" />
+            </div>
+            <p className="text-2xl font-black text-slate-800">{report.transactions}</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase">عمليات البيع</p>
+          </Card>
+
+          <Card className="p-6 text-center space-y-2">
+            <div className="bg-amber-50 w-10 h-10 rounded-xl flex items-center justify-center mx-auto text-amber-600">
+              <Package className="w-5 h-5" />
+            </div>
+            <p className="text-2xl font-black text-slate-800">{report.productsSold}</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase">سلعة تباعت</p>
+          </Card>
+        </div>
+
+        {/* Top Product */}
+        <Card className="p-6 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="bg-emerald-100 p-3 rounded-2xl text-emerald-600">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase">أكثر سلعة تباعت</p>
+              <p className="text-lg font-black text-slate-800">{report.topProduct.name}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xl font-black text-emerald-600">{report.topProduct.quantity}</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase">حبة</p>
+          </div>
+        </Card>
+
+        {/* Credit Added */}
+        <Card className="p-6 flex items-center justify-between border-rose-100 bg-rose-50/30">
+          <div className="flex items-center gap-4">
+            <div className="bg-rose-100 p-3 rounded-2xl text-rose-600">
+              <CreditCard className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase">كريدي جديد تزاد</p>
+              <p className="text-lg font-black text-slate-800">{report.creditAdded} DH</p>
+            </div>
+          </div>
+          <AlertTriangle className="w-5 h-5 text-rose-300" />
+        </Card>
+      </div>
+
+      <div className="pt-4">
+        <Button onClick={() => window.print()} variant="secondary" className="w-full py-4 text-sm">
+          تحميل التقرير (PDF)
+        </Button>
+      </div>
+    </motion.div>
+  );
+}
+
+function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscription, userProfile }: { 
+  sales: Sale[]; 
+  products: Product[]; 
+  customers: Customer[];
+  onOpenReport: () => void;
+  onOpenSubscription: () => void;
+  userProfile: UserProfile | null;
+}) {
+  const today = startOfDay(new Date());
+  const monthStart = startOfMonth(new Date());
+
+  const dailySales = sales.filter(s => {
+    const saleDate = (s.createdAt as any).toDate ? (s.createdAt as any).toDate() : new Date(s.createdAt);
+    return saleDate >= today;
+  });
+
+  const monthlySales = sales.filter(s => {
+    const saleDate = (s.createdAt as any).toDate ? (s.createdAt as any).toDate() : new Date(s.createdAt);
+    return saleDate >= monthStart;
+  });
+
+  const dailyTotal = dailySales.reduce((acc, curr) => acc + curr.totalPrice, 0);
+  const dailyProfit = dailySales.reduce((acc, curr) => acc + curr.profit, 0);
+  const monthlyTotal = monthlySales.reduce((acc, curr) => acc + curr.totalPrice, 0);
+  const monthlyProfit = monthlySales.reduce((acc, curr) => acc + curr.profit, 0);
+
+  const lowStockCount = products.filter(p => p.stock <= p.lowStockThreshold).length;
+  const totalCredit = customers.reduce((acc, curr) => acc + curr.totalDebt, 0);
+
+  // Chart data
+  const chartData = [
+    { name: 'اليوم', total: dailyTotal, profit: dailyProfit },
+    { name: 'الشهر', total: monthlyTotal, profit: monthlyProfit }
+  ];
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-6"
+    >
+      <h2 className="text-3xl font-black text-emerald-900">الحسابات</h2>
+
+      {/* Subscription Status Bar */}
+      <button 
+        onClick={onOpenSubscription}
+        className={cn(
+          "w-full p-4 rounded-3xl flex items-center justify-between border-2 transition-all",
+          userProfile?.subscriptionStatus === 'active' 
+            ? "bg-emerald-50 border-emerald-100 text-emerald-700" 
+            : "bg-rose-50 border-rose-100 text-rose-700 animate-pulse"
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "p-2 rounded-xl",
+            userProfile?.subscriptionStatus === 'active' ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+          )}>
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-black uppercase opacity-60">حالة الاشتراك</p>
+            <p className="text-sm font-black">
+              {userProfile?.subscriptionStatus === 'active' ? 'حساب مفعل ومحمي' : 'الاشتراك منتهي أو قيد المراجعة'}
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="w-5 h-5 opacity-40" />
+      </button>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="bg-emerald-600 text-white border-none p-4 cursor-pointer active:scale-95 transition-transform" onClick={onOpenReport}>
+          <div className="flex justify-between items-center">
+            <div>
+              <div className="text-emerald-100 text-xs font-bold mb-1">مبيعات اليوم</div>
+              <div className="text-2xl font-black">{dailyTotal} DH</div>
+            </div>
+            <ChevronRight className="w-6 h-6 opacity-50" />
+          </div>
+        </Card>
+        <Card className="bg-emerald-900 text-white border-none p-4">
+          <div className="text-emerald-300 text-xs font-bold mb-1">ربح اليوم</div>
+          <div className="text-2xl font-black">{dailyProfit} DH</div>
+        </Card>
+      </div>
+
+      <Card className="bg-rose-500 text-white border-none p-4">
+        <div className="text-rose-100 text-xs font-bold mb-1">مجموع الكريدي عند الناس</div>
+        <div className="text-3xl font-black">{totalCredit} DH</div>
+      </Card>
+
+      <Card className="p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-emerald-800">مقارنة الأرباح</h3>
+          <TrendingUp className="text-emerald-400 w-5 h-5" />
+        </div>
+        <div className="h-48 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748B', fontSize: 12}} />
+              <YAxis hide />
+              <Tooltip 
+                cursor={{fill: 'transparent'}}
+                contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}}
+              />
+              <Bar dataKey="total" fill="#10b981" radius={[8, 8, 0, 0]} barSize={40} />
+              <Bar dataKey="profit" fill="#064e3b" radius={[8, 8, 0, 0]} barSize={40} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      <div className="space-y-4">
+        <h3 className="font-bold text-emerald-800 ml-2">تنبيهات</h3>
+        {lowStockCount > 0 && (
+          <div className="bg-rose-50 border border-rose-100 p-5 rounded-3xl flex items-center gap-4">
+            <div className="bg-rose-100 p-3 rounded-2xl text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="font-bold text-rose-900">{lowStockCount} د السلعة قربات تسالي</div>
+              <div className="text-rose-500 text-sm">خاصك تعمر الـ Stock</div>
+            </div>
+          </div>
+        )}
+        
+        <Card className="flex items-center gap-4">
+          <div className="bg-emerald-100 p-3 rounded-2xl text-emerald-600">
+            <History className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="font-bold text-emerald-900">مبيعات الشهر</div>
+            <div className="text-emerald-500 font-black text-xl">{monthlyTotal} DH</div>
+          </div>
+        </Card>
+      </div>
+    </motion.div>
+  );
+}
