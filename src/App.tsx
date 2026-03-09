@@ -50,6 +50,7 @@ import {
   LogOut, 
   TrendingUp, 
   AlertTriangle,
+  AlertCircle,
   CheckCircle2,
   XCircle,
   History,
@@ -145,6 +146,39 @@ export const Input = ({ label, ...props }: React.InputHTMLAttributes<HTMLInputEl
 
 // --- Main App ---
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+function handleFirestoreError(error: any, operationType: OperationType, path: string | null, onIndexError?: (url: string) => void) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  
+  // If it's an index error, show a more helpful message in console and UI
+  if (error?.code === 'failed-precondition' && error?.message?.includes('index')) {
+    const urlMatch = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]+/);
+    if (urlMatch && onIndexError) {
+      onIndexError(urlMatch[0]);
+    }
+    console.warn('%c INDEX REQUIRED: %c Click the link in the error message above to create the required Firestore index.', 'background: #ff0000; color: #fff; font-weight: bold; padding: 2px 4px; border-radius: 4px;', 'color: #ff0000; font-weight: bold;');
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,6 +196,7 @@ export default function App() {
   const [publicCreditId, setPublicCreditId] = useState<string | null>(null);
   const [prefilledBarcode, setPrefilledBarcode] = useState<string>('');
   const [preselectedProductForOrder, setPreselectedProductForOrder] = useState<Product | null>(null);
+  const [missingIndexUrl, setMissingIndexUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -192,31 +227,43 @@ export default function App() {
     const qProducts = query(collection(db, 'products'), where('ownerId', '==', user.uid));
     const unsubProducts = onSnapshot(qProducts, (snapshot) => {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'products', setMissingIndexUrl);
     });
 
     const qSales = query(collection(db, 'sales'), where('ownerId', '==', user.uid), orderBy('createdAt', 'desc'), limit(100));
     const unsubSales = onSnapshot(qSales, (snapshot) => {
       setSales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'sales', setMissingIndexUrl);
     });
 
     const qCustomers = query(collection(db, 'customers'), where('ownerId', '==', user.uid));
     const unsubCustomers = onSnapshot(qCustomers, (snapshot) => {
       setCustomers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'customers', setMissingIndexUrl);
     });
 
     const qCredits = query(collection(db, 'credits'), where('ownerId', '==', user.uid), orderBy('date', 'desc'));
     const unsubCredits = onSnapshot(qCredits, (snapshot) => {
       setCredits(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CreditTransaction)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'credits', setMissingIndexUrl);
     });
 
     const qSuppliers = query(collection(db, 'suppliers'), where('ownerId', '==', user.uid));
     const unsubSuppliers = onSnapshot(qSuppliers, (snapshot) => {
       setSuppliers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Supplier)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'suppliers', setMissingIndexUrl);
     });
 
     const qSupplyOrders = query(collection(db, 'supply_orders'), where('ownerId', '==', user.uid), orderBy('createdAt', 'desc'));
     const unsubSupplyOrders = onSnapshot(qSupplyOrders, (snapshot) => {
       setSupplyOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupplyOrder)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'supply_orders', setMissingIndexUrl);
     });
 
     const unsubProfile = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
@@ -231,6 +278,8 @@ export default function App() {
       } else {
         setShowSetup(true);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${user.uid}`, setMissingIndexUrl);
     });
 
     // Check for daily report notification
@@ -255,6 +304,8 @@ export default function App() {
           return [reportNotif, ...prev];
         });
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'daily_reports', setMissingIndexUrl);
     });
 
     // Check for low stock products
@@ -481,6 +532,29 @@ export default function App() {
       </header>
 
       <main className="max-w-md mx-auto p-4 space-y-6">
+        {missingIndexUrl && (
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-sm space-y-3">
+            <div className="flex items-center gap-2 font-black">
+              <AlertCircle className="w-5 h-5" />
+              <span>خاصك تفعل الفهرس (Index)</span>
+            </div>
+            <p>باش التطبيق يخدم مزيان، خاصك تضغط على الرابط لتحت وتفعل الفهرس في Firebase Console:</p>
+            <a 
+              href={missingIndexUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="block w-full py-3 bg-rose-600 text-white text-center rounded-xl font-bold hover:bg-rose-700 transition-colors"
+            >
+              تفعيل الفهرس دابا
+            </a>
+            <button 
+              onClick={() => setMissingIndexUrl(null)}
+              className="w-full text-center text-xs text-rose-400 font-bold"
+            >
+              إخفاء التنبيه
+            </button>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           {activeTab === 'sales' && <SalesView products={products} sales={sales} customers={customers} user={user} onAddProduct={(barcode) => {
             setPrefilledBarcode(barcode);
@@ -788,6 +862,7 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
       {isScanning && (
         <div className="bg-slate-900 rounded-3xl p-4 mb-4 text-center space-y-4 relative overflow-hidden">
           <BarcodeScanner 
+            cooldownMs={500}
             onScan={(barcode) => {
               const product = barcodeMap.get(barcode);
               if (product) {
@@ -1832,6 +1907,8 @@ function ReferralView({ userProfile, user, onBack }: { userProfile: UserProfile 
     const q = query(collection(db, 'referrals'), where('inviterId', '==', user.uid), orderBy('date', 'desc'));
     const unsub = onSnapshot(q, (snapshot) => {
       setReferredUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.error('Referrals listener failed', error);
     });
     return unsub;
   }, [user]);
@@ -1965,6 +2042,8 @@ function DailyReportView({ sales, credits, user }: { sales: Sale[]; credits: Cre
         // If no report exists, we calculate it on the fly for the UI
         calculateAndSaveReport();
       }
+    }, (error) => {
+      console.error('Daily report listener failed', error);
     });
 
     return unsub;
