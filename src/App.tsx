@@ -89,6 +89,8 @@ import AdminDashboard from './components/AdminDashboard';
 import CustomerCreditPage from './components/CustomerCreditPage';
 import SubscriptionPage from './components/SubscriptionPage';
 import { QRCodeSVG } from 'qrcode.react';
+import { utils, read, writeFile } from 'xlsx';
+import { FileUp, FileDown, Download } from 'lucide-react';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -155,6 +157,7 @@ export default function App() {
   const [showSetup, setShowSetup] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [publicCreditId, setPublicCreditId] = useState<string | null>(null);
+  const [prefilledBarcode, setPrefilledBarcode] = useState<string>('');
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -446,8 +449,11 @@ export default function App() {
 
       <main className="max-w-md mx-auto p-4 space-y-6">
         <AnimatePresence mode="wait">
-          {activeTab === 'sales' && <SalesView products={products} sales={sales} customers={customers} user={user} />}
-          {activeTab === 'products' && <ProductsView products={products} user={user} />}
+          {activeTab === 'sales' && <SalesView products={products} sales={sales} customers={customers} user={user} onAddProduct={(barcode) => {
+            setPrefilledBarcode(barcode);
+            setActiveTab('products');
+          }} />}
+          {activeTab === 'products' && <ProductsView products={products} user={user} prefilledBarcode={prefilledBarcode} onClearPrefilled={() => setPrefilledBarcode('')} />}
           {activeTab === 'credits' && <CreditsView customers={customers} credits={credits} user={user} />}
           {activeTab === 'referral' && <ReferralView userProfile={userProfile} user={user} />}
           {activeTab === 'dashboard' && <DashboardView sales={sales} products={products} customers={customers} onOpenReport={() => setActiveTab('report')} onOpenSubscription={() => setActiveTab('subscription')} userProfile={userProfile} />}
@@ -510,15 +516,55 @@ function NavButton({ active, onClick, icon, label }: { active: boolean; onClick:
 
 // --- Views ---
 
-function SalesView({ products, sales, customers, user }: { products: Product[]; sales: Sale[]; customers: Customer[]; user: User }) {
+function SalesView({ products, sales, customers, user, onAddProduct }: { products: Product[]; sales: Sale[]; customers: Customer[]; user: User; onAddProduct: (barcode: string) => void }) {
   const [cart, setCart] = useState<{ [productId: string]: number }>({});
   const [search, setSearch] = useState('');
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'qr' | null>(null);
   const [selectedCustomerForCredit, setSelectedCustomerForCredit] = useState<string>('');
   const [isScanning, setIsScanning] = useState(false);
+  const [recentScans, setRecentScans] = useState<{ id: string; name: string; price: number; time: number }[]>([]);
+
+  useEffect(() => {
+    if (recentScans.length > 0) {
+      const timer = setTimeout(() => {
+        setRecentScans(prev => prev.slice(0, prev.length - 1));
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [recentScans]);
+
   const [customProduct, setCustomProduct] = useState({ name: '', price: '' });
   const [showCustomAdd, setShowCustomAdd] = useState(false);
+  const [lastScannedBarcode, setLastScannedBarcode] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  // Preloaded Product Map for O(1) lookup
+  const barcodeMap = useMemo(() => {
+    const map = new Map<string, Product>();
+    products.forEach(p => {
+      if (p.barcode) map.set(p.barcode, p);
+    });
+    return map;
+  }, [products]);
+
+  const playBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.1);
+      if (navigator.vibrate) navigator.vibrate(50);
+    } catch (e) {
+      console.log('Audio feedback failed', e);
+    }
+  };
 
   // Calculate most sold products
   const mostSoldIds = useMemo(() => {
@@ -692,20 +738,84 @@ function SalesView({ products, sales, customers, user }: { products: Product[]; 
       </div>
 
       {isScanning && (
-        <div className="bg-slate-900 rounded-3xl p-8 mb-4 text-center space-y-4">
+        <div className="bg-slate-900 rounded-3xl p-4 mb-4 text-center space-y-4 relative overflow-hidden">
           <BarcodeScanner 
             onScan={(barcode) => {
-              const product = products.find(p => p.barcode === barcode);
+              const product = barcodeMap.get(barcode);
               if (product) {
                 addToCart(product);
-                setIsScanning(false);
+                playBeep();
+                
+                // Add to recent scans
+                const newScan = { 
+                  id: Math.random().toString(), 
+                  name: product.name, 
+                  price: product.price, 
+                  time: Date.now() 
+                };
+                setRecentScans(prev => [newScan, ...prev].slice(0, 3));
+                setScanError(null);
               } else {
-                alert('هاد السلعة ما كايناش');
+                setScanError(barcode);
               }
             }}
             onError={(error) => console.log(error)}
           />
-          <Button onClick={() => setIsScanning(false)} variant="ghost" className="text-white hover:bg-white/10">إلغاء</Button>
+          
+          {/* Recent Scans Overlay */}
+          <div className="absolute top-4 left-4 right-4 flex flex-col gap-2 pointer-events-none">
+            <AnimatePresence>
+              {recentScans.map((scan) => (
+                <motion.div
+                  key={scan.id}
+                  initial={{ opacity: 0, x: -20, scale: 0.8 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  className="bg-emerald-600/90 backdrop-blur-md text-white px-4 py-2 rounded-2xl flex items-center justify-between shadow-lg border border-white/20"
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                    <span className="font-bold text-sm truncate max-w-[120px]">{scan.name}</span>
+                  </div>
+                  <span className="font-mono text-xs bg-white/20 px-2 py-0.5 rounded-lg">+{scan.price} DH</span>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+          
+          <AnimatePresence>
+            {scanError && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="absolute inset-0 bg-rose-600/95 flex flex-col items-center justify-center text-white z-10 p-6"
+              >
+                <AlertTriangle className="w-12 h-12 mb-2" />
+                <p className="font-black text-lg">هاد السلعة ما كايناش</p>
+                <p className="text-xs font-mono mb-4 opacity-80">{scanError}</p>
+                <div className="flex gap-2 w-full">
+                  <Button 
+                    onClick={() => {
+                      onAddProduct(scanError);
+                      setScanError(null);
+                    }}
+                    className="flex-1 py-3 text-sm bg-white text-rose-600"
+                  >
+                    زيد السلعة
+                  </Button>
+                  <Button 
+                    onClick={() => setScanError(null)}
+                    variant="ghost"
+                    className="text-white border border-white/30"
+                  >
+                    إلغاء
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          <Button onClick={() => setIsScanning(false)} variant="ghost" className="text-white hover:bg-white/10 w-full">إيقاف المسح</Button>
         </div>
       )}
 
@@ -927,8 +1037,10 @@ function SalesView({ products, sales, customers, user }: { products: Product[]; 
   );
 }
 
-function ProductsView({ products, user }: { products: Product[]; user: User }) {
+function ProductsView({ products, user, prefilledBarcode, onClearPrefilled }: { products: Product[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void }) {
   const [isAdding, setIsAdding] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<{ success: number; errors: string[] } | null>(null);
   const [isScanMode, setIsScanMode] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -938,6 +1050,100 @@ function ProductsView({ products, user }: { products: Product[]; user: User }) {
     lowStockThreshold: '5',
     barcode: ''
   });
+
+  useEffect(() => {
+    if (prefilledBarcode) {
+      setIsAdding(true);
+      setFormData(prev => ({ ...prev, barcode: prefilledBarcode }));
+      if (onClearPrefilled) onClearPrefilled();
+    }
+  }, [prefilledBarcode, onClearPrefilled]);
+
+  const handleExport = () => {
+    const data = products.map(p => ({
+      'Name': p.name,
+      'Price': p.price,
+      'Cost Price': p.costPrice,
+      'Stock': p.stock,
+      'Low Stock Threshold': p.lowStockThreshold,
+      'Barcode': p.barcode || ''
+    }));
+    const ws = utils.json_to_sheet(data);
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, "Products");
+    writeFile(wb, "products_export.xlsx");
+  };
+
+  const downloadTemplate = () => {
+    const data = [
+      { 'Name': 'Example Product', 'Price': 10, 'Cost Price': 7, 'Stock': 100, 'Low Stock Threshold': 5, 'Barcode': '123456789' }
+    ];
+    const ws = utils.json_to_sheet(data);
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, "Template");
+    writeFile(wb, "products_template.xlsx");
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const bstr = evt.target?.result;
+      const wb = read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = utils.sheet_to_json(ws) as any[];
+
+      let successCount = 0;
+      const errors: string[] = [];
+      const barcodes = new Set(products.map(p => p.barcode).filter(Boolean));
+
+      for (const [index, row] of data.entries()) {
+        const name = row['Name'] || row['name'];
+        const price = Number(row['Price'] || row['price']);
+        const costPrice = Number(row['Cost Price'] || row['costPrice'] || 0);
+        const stock = Number(row['Stock'] || row['stock'] || 0);
+        const lowStockThreshold = Number(row['Low Stock Threshold'] || row['lowStockThreshold'] || 5);
+        const barcode = String(row['Barcode'] || row['barcode'] || '').trim();
+
+        if (!name) {
+          errors.push(`Row ${index + 2}: Name is missing`);
+          continue;
+        }
+        if (isNaN(price) || price < 0) {
+          errors.push(`Row ${index + 2}: Invalid price for ${name}`);
+          continue;
+        }
+        if (barcode && barcodes.has(barcode)) {
+          errors.push(`Row ${index + 2}: Duplicate barcode ${barcode} for ${name}`);
+          continue;
+        }
+
+        try {
+          await addDoc(collection(db, 'products'), {
+            name,
+            price,
+            costPrice,
+            stock,
+            lowStockThreshold,
+            barcode,
+            ownerId: user.uid,
+            createdAt: Timestamp.now()
+          });
+          successCount++;
+          if (barcode) barcodes.add(barcode);
+        } catch (err) {
+          errors.push(`Row ${index + 2}: Failed to save ${name}`);
+        }
+      }
+
+      setImportSummary({ success: successCount, errors });
+      setIsImporting(false);
+    };
+    reader.readAsBinaryString(file);
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -973,6 +1179,12 @@ function ProductsView({ products, user }: { products: Product[]; user: User }) {
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-black text-emerald-900">السلعة</h2>
         <div className="flex gap-2">
+          <Button onClick={() => setIsImporting(true)} variant="secondary" className="px-4 py-3 rounded-xl">
+            <FileUp className="w-6 h-6" />
+          </Button>
+          <Button onClick={handleExport} variant="secondary" className="px-4 py-3 rounded-xl">
+            <FileDown className="w-6 h-6" />
+          </Button>
           <Button onClick={() => setIsScanMode(true)} variant="secondary" className="px-4 py-3 rounded-xl">
             <ScanLine className="w-6 h-6" />
           </Button>
@@ -981,6 +1193,51 @@ function ProductsView({ products, user }: { products: Product[]; user: User }) {
           </Button>
         </div>
       </div>
+
+      {isImporting && (
+        <Card className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-bold">استيراد السلعة</h3>
+            <button onClick={() => setIsImporting(false)}><XCircle className="text-rose-400" /></button>
+          </div>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-500">تقدر تزيد بزاف ديال السلعة دقة وحدة باستعمال ملف Excel أو CSV.</p>
+            <Button onClick={downloadTemplate} variant="secondary" className="w-full flex items-center justify-center gap-2">
+              <Download className="w-4 h-4" />
+              تحميل النموذج (Template)
+            </Button>
+            <div className="relative">
+              <input 
+                type="file" 
+                accept=".xlsx, .xls, .csv" 
+                onChange={handleImport}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <Button className="w-full">اختار الملف</Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {importSummary && (
+        <Card className="space-y-4 border-2 border-emerald-500">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-bold">نتيجة الاستيراد</h3>
+            <button onClick={() => setImportSummary(null)}><XCircle className="text-slate-400" /></button>
+          </div>
+          <div className="bg-emerald-50 p-4 rounded-2xl text-emerald-700 font-bold">
+            تم استيراد {importSummary.success} سلعة بنجاح!
+          </div>
+          {importSummary.errors.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-bold text-rose-600">أخطاء ({importSummary.errors.length}):</p>
+              <div className="max-h-32 overflow-y-auto text-xs text-rose-500 space-y-1 bg-rose-50 p-3 rounded-xl">
+                {importSummary.errors.map((err, i) => <div key={i}>{err}</div>)}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
 
       {isAdding && (
         <Card className="space-y-4">

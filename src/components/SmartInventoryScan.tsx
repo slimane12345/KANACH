@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../firebase';
 import { 
   collection, 
@@ -48,14 +48,36 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
   const [newProductData, setNewProductData] = useState({ name: '', price: '', costPrice: '', lowStockThreshold: '5' });
   const [saving, setSaving] = useState(false);
 
-  // Simulated continuous scan logic
-  // In a real app, this would be connected to a barcode scanner library
-  const simulateScan = (barcode: string) => {
-    handleBarcodeScanned(barcode);
+  // Preloaded Product Map for O(1) lookup
+  const barcodeMap = useMemo(() => {
+    const map = new Map<string, Product>();
+    products.forEach(p => {
+      if (p.barcode) map.set(p.barcode, p);
+    });
+    return map;
+  }, [products]);
+
+  const playBeep = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.1);
+      if (navigator.vibrate) navigator.vibrate(50);
+    } catch (e) {
+      console.log('Audio feedback failed', e);
+    }
   };
 
   const handleBarcodeScanned = (barcode: string) => {
     setLastScanned(barcode);
+    playBeep();
     
     setScannedItems(prev => {
       const existingIndex = prev.findIndex(item => item.barcode === barcode);
@@ -65,7 +87,7 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
         newItems[existingIndex].quantity += 1;
         return newItems;
       } else {
-        const existingProduct = products.find(p => p.barcode === barcode);
+        const existingProduct = barcodeMap.get(barcode);
         if (existingProduct) {
           return [...prev, { barcode, product: existingProduct, quantity: 1, isNew: false }];
         } else {
