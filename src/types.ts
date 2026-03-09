@@ -142,16 +142,30 @@ export interface AppNotification {
 export interface Supplier {
   id: string;
   name: string;
-  phone: string;
-  products: string[];
+  company?: string;
+  phone?: string;
+  address?: string;
+  totalDebt: number;
   ownerId: string;
+  createdAt?: string;
 }
 
-export interface Order {
+export interface SupplyOrderItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  costPrice: number;
+}
+
+export interface SupplyOrder {
   id: string;
-  shopId: string;
   supplierId: string;
-  products: { name: string; quantity: number }[];
-  status: 'pending' | 'confirmed' | 'delivered';
+  supplierName: string;
+  items: SupplyOrderItem[];
+  totalCost: number;
+  paidAmount: number;
+  paymentStatus: 'unpaid' | 'partial' | 'paid';
+  status: 'pending' | 'received';
+  ownerId: string;
   createdAt: any;
 }

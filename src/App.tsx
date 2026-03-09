@@ -68,7 +68,8 @@ import {
   Bell,
   ArrowUpRight,
   ArrowDownRight,
-  ShieldCheck
+  ShieldCheck,
+  Truck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
@@ -84,7 +85,7 @@ import {
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Product, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification } from './types';
+import { Product, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification, Supplier, SupplyOrder, SupplyOrderItem } from './types';
 import AdminDashboard from './components/AdminDashboard';
 import CustomerCreditPage from './components/CustomerCreditPage';
 import SubscriptionPage from './components/SubscriptionPage';
@@ -147,17 +148,20 @@ export const Input = ({ label, ...props }: React.InputHTMLAttributes<HTMLInputEl
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'credits' | 'dashboard' | 'referral' | 'report' | 'subscription'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'credits' | 'dashboard' | 'report' | 'subscription' | 'suppliers'>('dashboard');
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [credits, setCredits] = useState<CreditTransaction[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplyOrders, setSupplyOrders] = useState<SupplyOrder[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [publicCreditId, setPublicCreditId] = useState<string | null>(null);
   const [prefilledBarcode, setPrefilledBarcode] = useState<string>('');
+  const [preselectedProductForOrder, setPreselectedProductForOrder] = useState<Product | null>(null);
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -205,6 +209,16 @@ export default function App() {
       setCredits(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CreditTransaction)));
     });
 
+    const qSuppliers = query(collection(db, 'suppliers'), where('ownerId', '==', user.uid));
+    const unsubSuppliers = onSnapshot(qSuppliers, (snapshot) => {
+      setSuppliers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Supplier)));
+    });
+
+    const qSupplyOrders = query(collection(db, 'supply_orders'), where('ownerId', '==', user.uid), orderBy('createdAt', 'desc'));
+    const unsubSupplyOrders = onSnapshot(qSupplyOrders, (snapshot) => {
+      setSupplyOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupplyOrder)));
+    });
+
     const unsubProfile = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -243,11 +257,30 @@ export default function App() {
       }
     });
 
+    // Check for low stock products
+    const lowStockProducts = products.filter(p => p.stock <= p.lowStockThreshold);
+    if (lowStockProducts.length > 0) {
+      const stockNotif: AppNotification = {
+        id: 'low-stock-' + todayStr,
+        title: 'تنبيه: السلعة قربات تسالي',
+        message: `عندك ${lowStockProducts.length} سلعة قربات تسالي. خاصك تعمر الستوك.`,
+        type: 'warning',
+        read: false,
+        timestamp: Timestamp.now()
+      };
+      setNotifications(prev => {
+        if (prev.some(n => n.id === stockNotif.id)) return prev;
+        return [stockNotif, ...prev];
+      });
+    }
+
     return () => {
       unsubProducts();
       unsubSales();
       unsubCustomers();
       unsubCredits();
+      unsubSuppliers();
+      unsubSupplyOrders();
       unsubProfile();
       unsubReport();
     };
@@ -453,11 +486,17 @@ export default function App() {
             setPrefilledBarcode(barcode);
             setActiveTab('products');
           }} />}
-          {activeTab === 'products' && <ProductsView products={products} user={user} prefilledBarcode={prefilledBarcode} onClearPrefilled={() => setPrefilledBarcode('')} />}
+          {activeTab === 'products' && <ProductsView products={products} user={user} prefilledBarcode={prefilledBarcode} onClearPrefilled={() => setPrefilledBarcode('')} onOpenSuppliers={(p) => {
+            setPreselectedProductForOrder(p || null);
+            setActiveTab('suppliers');
+          }} />}
           {activeTab === 'credits' && <CreditsView customers={customers} credits={credits} user={user} />}
-          {activeTab === 'referral' && <ReferralView userProfile={userProfile} user={user} />}
-          {activeTab === 'dashboard' && <DashboardView sales={sales} products={products} customers={customers} onOpenReport={() => setActiveTab('report')} onOpenSubscription={() => setActiveTab('subscription')} userProfile={userProfile} />}
+          {activeTab === 'dashboard' && <DashboardView sales={sales} products={products} customers={customers} onOpenReport={() => setActiveTab('report')} onOpenSubscription={() => setActiveTab('subscription')} onOpenSuppliers={(p) => {
+            setPreselectedProductForOrder(p || null);
+            setActiveTab('suppliers');
+          }} userProfile={userProfile} user={user} />}
           {activeTab === 'report' && <DailyReportView sales={sales} credits={credits} user={user!} />}
+          {activeTab === 'suppliers' && <SuppliersView suppliers={suppliers} supplyOrders={supplyOrders} products={products} user={user!} preselectedProduct={preselectedProductForOrder} onClearPreselected={() => setPreselectedProductForOrder(null)} />}
           {activeTab === 'subscription' && <SubscriptionPage userProfile={userProfile} onBack={() => setActiveTab('dashboard')} />}
         </AnimatePresence>
       </main>
@@ -483,10 +522,10 @@ export default function App() {
           label="كريدي" 
         />
         <NavButton 
-          active={activeTab === 'referral'} 
-          onClick={() => setActiveTab('referral')} 
-          icon={<Gift />} 
-          label="دعوة" 
+          active={activeTab === 'suppliers'} 
+          onClick={() => setActiveTab('suppliers')} 
+          icon={<Truck />} 
+          label="موردين" 
         />
         <NavButton 
           active={activeTab === 'dashboard'} 
@@ -621,6 +660,15 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
 
   const handleCheckout = async () => {
     if (cartItems.length === 0 || !paymentMethod) return;
+
+    // Check stock before processing
+    const outOfStockItems = cartItems.filter(item => item.product.stock < item.quantity);
+    if (outOfStockItems.length > 0) {
+      const itemNames = outOfStockItems.map(item => item.product.name).join(', ');
+      alert(`عفواً، هاد السلع تقاضاو من الستوك: ${itemNames}. نقص الكمية ولا حيدهم باش تكمل.`);
+      return;
+    }
+
     if (paymentMethod === 'credit' && !selectedCustomerForCredit) {
       alert('اختار الكليان لي غايدير الكريدي');
       return;
@@ -918,15 +966,34 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
             {/* Cart Items List */}
             <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
               {cartItems.map(item => (
-                <div key={item.product.id} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl">
+                <div key={item.product.id} className={cn(
+                  "flex justify-between items-center p-4 rounded-2xl",
+                  item.product.stock < item.quantity ? "bg-red-50 border border-red-200" : "bg-slate-50"
+                )}>
                   <div className="flex items-center gap-3">
-                    <div className="font-bold text-slate-800">{item.product.name}</div>
+                    <div className="flex flex-col">
+                      <div className="font-bold text-slate-800">{item.product.name}</div>
+                      {item.product.stock < item.quantity && (
+                        <div className="text-red-500 text-[10px] font-bold">
+                          الستوك فيه غير {item.product.stock} حبة
+                        </div>
+                      )}
+                    </div>
                     <div className="text-slate-400 text-sm">x{item.quantity}</div>
                   </div>
                   <div className="font-black text-emerald-600">{item.product.price * item.quantity} DH</div>
                 </div>
               ))}
             </div>
+
+            {cartItems.some(item => item.product.stock < item.quantity) && (
+              <div className="bg-red-50 p-4 rounded-2xl border border-red-100 flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+                <p className="text-red-700 text-xs font-bold">
+                  كاين شي سلع تقاضاو من الستوك. نقص الكمية ولا حيدهم باش تقدر تخلص.
+                </p>
+              </div>
+            )}
 
             <div className="bg-emerald-50 p-6 rounded-3xl flex justify-between items-center">
               <span className="text-emerald-700 font-bold">المجموع الكلي</span>
@@ -988,10 +1055,10 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
 
             <Button 
               onClick={handleCheckout} 
-              disabled={!paymentMethod}
+              disabled={!paymentMethod || cartItems.some(item => item.product.stock < item.quantity)}
               className={cn(
                 "w-full py-6 text-xl rounded-[28px]",
-                !paymentMethod && "opacity-50 grayscale"
+                (!paymentMethod || cartItems.some(item => item.product.stock < item.quantity)) && "opacity-50 grayscale"
               )}
             >
               تأكيد العملية
@@ -1037,7 +1104,7 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
   );
 }
 
-function ProductsView({ products, user, prefilledBarcode, onClearPrefilled }: { products: Product[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void }) {
+function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOpenSuppliers }: { products: Product[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void; onOpenSuppliers: (p?: Product) => void }) {
   const [isAdding, setIsAdding] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importSummary, setImportSummary] = useState<{ success: number; errors: string[] } | null>(null);
@@ -1297,31 +1364,55 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled }: { 
       )}
 
       <div className="grid gap-4">
-        {products.map(product => (
-          <Card key={product.id} className="flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <div className={cn(
-                "p-3 rounded-2xl",
-                product.stock <= product.lowStockThreshold ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"
-              )}>
-                <Package className="w-6 h-6" />
+        {products.map(product => {
+          const isLowStock = product.stock <= product.lowStockThreshold;
+          return (
+            <Card key={product.id} className={cn(
+              "flex justify-between items-center transition-all",
+              isLowStock ? "border-rose-200 bg-rose-50/30" : ""
+            )}>
+              <div className="flex items-center gap-4">
+                <div className={cn(
+                  "p-3 rounded-2xl",
+                  isLowStock ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"
+                )}>
+                  <Package className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="font-bold text-lg">{product.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-500 font-mono text-sm">{product.price} DH</span>
+                    {isLowStock && (
+                      <span className="bg-rose-100 text-rose-600 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                        Stock Low
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="font-bold text-lg">{product.name}</div>
-                <div className="text-emerald-500 font-mono text-sm">{product.price} DH</div>
+              <div className="flex items-center gap-4">
+                {isLowStock && (
+                  <button 
+                    onClick={() => onOpenSuppliers(product)}
+                    className="p-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 transition-colors shadow-sm"
+                    title="طلب من المورد"
+                  >
+                    <Truck className="w-5 h-5" />
+                  </button>
+                )}
+                <div className="text-right">
+                  <div className={cn(
+                    "font-black text-xl",
+                    isLowStock ? "text-rose-600" : "text-emerald-900"
+                  )}>
+                    {product.stock}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-300">الكمية</div>
+                </div>
               </div>
-            </div>
-            <div className="text-right">
-              <div className={cn(
-                "font-black text-xl",
-                product.stock <= product.lowStockThreshold ? "text-rose-600" : "text-emerald-900"
-              )}>
-                {product.stock}
-              </div>
-              <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-300">الكمية</div>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
       </div>
     </motion.div>
   );
@@ -1732,7 +1823,7 @@ function SetupView({ user }: { user: User }) {
   );
 }
 
-function ReferralView({ userProfile, user }: { userProfile: UserProfile | null; user: User }) {
+function ReferralView({ userProfile, user, onBack }: { userProfile: UserProfile | null; user: User; onBack?: () => void }) {
   const [copied, setCopied] = useState(false);
   const [referredUsers, setReferredUsers] = useState<any[]>([]);
 
@@ -1775,7 +1866,14 @@ function ReferralView({ userProfile, user }: { userProfile: UserProfile | null; 
       exit={{ opacity: 0, y: -20 }}
       className="space-y-6"
     >
-      <h2 className="text-3xl font-black text-emerald-900">ربح معانا</h2>
+      <div className="flex items-center gap-4">
+        {onBack && (
+          <button onClick={onBack} className="p-2 bg-white rounded-xl text-emerald-600 shadow-sm border border-emerald-50">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+        )}
+        <h2 className="text-3xl font-black text-emerald-900">ربح معانا</h2>
+      </div>
       
       <Card className="bg-emerald-900 text-white border-none p-8 text-center space-y-4">
         <div className="bg-emerald-800/50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-2">
@@ -2054,14 +2152,17 @@ function DailyReportView({ sales, credits, user }: { sales: Sale[]; credits: Cre
   );
 }
 
-function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscription, userProfile }: { 
+function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscription, onOpenSuppliers, userProfile, user }: { 
   sales: Sale[]; 
   products: Product[]; 
   customers: Customer[];
   onOpenReport: () => void;
   onOpenSubscription: () => void;
+  onOpenSuppliers: (p?: Product) => void;
   userProfile: UserProfile | null;
+  user: User;
 }) {
+  const [showReferral, setShowReferral] = useState(false);
   const today = startOfDay(new Date());
   const monthStart = startOfMonth(new Date());
 
@@ -2089,6 +2190,10 @@ function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscri
     { name: 'الشهر', total: monthlyTotal, profit: monthlyProfit }
   ];
 
+  if (showReferral) {
+    return <ReferralView userProfile={userProfile} user={user} onBack={() => setShowReferral(false)} />;
+  }
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }} 
@@ -2099,31 +2204,52 @@ function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscri
       <h2 className="text-3xl font-black text-emerald-900">الحسابات</h2>
 
       {/* Subscription Status Bar */}
-      <button 
-        onClick={onOpenSubscription}
-        className={cn(
-          "w-full p-4 rounded-3xl flex items-center justify-between border-2 transition-all",
-          userProfile?.subscriptionStatus === 'active' 
-            ? "bg-emerald-50 border-emerald-100 text-emerald-700" 
-            : "bg-rose-50 border-rose-100 text-rose-700 animate-pulse"
-        )}
-      >
-        <div className="flex items-center gap-3">
-          <div className={cn(
-            "p-2 rounded-xl",
-            userProfile?.subscriptionStatus === 'active' ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
-          )}>
-            <ShieldCheck className="w-5 h-5" />
+      <div className="grid grid-cols-1 gap-4">
+        <button 
+          onClick={onOpenSubscription}
+          className={cn(
+            "w-full p-4 rounded-3xl flex items-center justify-between border-2 transition-all",
+            userProfile?.subscriptionStatus === 'active' 
+              ? "bg-emerald-50 border-emerald-100 text-emerald-700" 
+              : "bg-rose-50 border-rose-100 text-rose-700 animate-pulse"
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "p-2 rounded-xl",
+              userProfile?.subscriptionStatus === 'active' ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+            )}>
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-black uppercase opacity-60">حالة الاشتراك</p>
+              <p className="text-sm font-black">
+                {userProfile?.subscriptionStatus === 'active' ? 'حساب مفعل ومحمي' : 'الاشتراك منتهي أو قيد المراجعة'}
+              </p>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-xs font-black uppercase opacity-60">حالة الاشتراك</p>
-            <p className="text-sm font-black">
-              {userProfile?.subscriptionStatus === 'active' ? 'حساب مفعل ومحمي' : 'الاشتراك منتهي أو قيد المراجعة'}
-            </p>
+          <ChevronRight className="w-5 h-5 opacity-40" />
+        </button>
+
+        {/* Referral Card - Professional Style */}
+        <button 
+          onClick={() => setShowReferral(true)}
+          className="w-full bg-gradient-to-br from-emerald-800 to-emerald-950 text-white p-6 rounded-[32px] flex items-center justify-between border-none transition-all active:scale-95 shadow-lg shadow-emerald-900/20"
+        >
+          <div className="flex items-center gap-4">
+            <div className="bg-emerald-700/50 p-3 rounded-2xl text-emerald-400">
+              <Gift className="w-6 h-6" />
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-black uppercase tracking-widest opacity-60 mb-1">برنامج المكافآت</p>
+              <p className="text-lg font-black">استدعي صحابك وربح 50 DH</p>
+            </div>
           </div>
-        </div>
-        <ChevronRight className="w-5 h-5 opacity-40" />
-      </button>
+          <div className="bg-white/10 p-2 rounded-full">
+            <ChevronRight className="w-5 h-5 opacity-60" />
+          </div>
+        </button>
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <Card className="bg-emerald-600 text-white border-none p-4 cursor-pointer active:scale-95 transition-transform" onClick={onOpenReport}>
@@ -2171,14 +2297,22 @@ function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscri
       <div className="space-y-4">
         <h3 className="font-bold text-emerald-800 ml-2">تنبيهات</h3>
         {lowStockCount > 0 && (
-          <div className="bg-rose-50 border border-rose-100 p-5 rounded-3xl flex items-center gap-4">
-            <div className="bg-rose-100 p-3 rounded-2xl text-rose-600">
-              <AlertTriangle className="w-6 h-6" />
+          <div className="bg-rose-50 border border-rose-100 p-5 rounded-3xl flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="bg-rose-100 p-3 rounded-2xl text-rose-600">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-bold text-rose-900">{lowStockCount} د السلعة قربات تسالي</div>
+                <div className="text-rose-500 text-sm">خاصك تعمر الـ Stock</div>
+              </div>
             </div>
-            <div>
-              <div className="font-bold text-rose-900">{lowStockCount} د السلعة قربات تسالي</div>
-              <div className="text-rose-500 text-sm">خاصك تعمر الـ Stock</div>
-            </div>
+            <button 
+              onClick={() => onOpenSuppliers(products.find(p => p.stock <= p.lowStockThreshold))}
+              className="bg-rose-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-rose-700 transition-colors active:scale-95"
+            >
+              طلب السلعة
+            </button>
           </div>
         )}
         
@@ -2193,5 +2327,321 @@ function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscri
         </Card>
       </div>
     </motion.div>
+  );
+}
+
+function SuppliersView({ suppliers, supplyOrders, products, user, preselectedProduct, onClearPreselected }: { 
+  suppliers: Supplier[]; 
+  supplyOrders: SupplyOrder[]; 
+  products: Product[]; 
+  user: User;
+  preselectedProduct?: Product | null;
+  onClearPreselected?: () => void;
+}) {
+  const [view, setView] = useState<'list' | 'add' | 'details' | 'new-order'>('list');
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [supplierForm, setSupplierForm] = useState({ name: '', company: '', phone: '', address: '' });
+  const [orderItems, setOrderItems] = useState<SupplyOrderItem[]>([]);
+  const [paidAmount, setPaidAmount] = useState<string>('0');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const totalSupplierDebt = suppliers.reduce((acc, curr) => acc + curr.totalDebt, 0);
+
+  const handleAddSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'suppliers'), {
+        ...supplierForm,
+        totalDebt: 0,
+        ownerId: user.uid,
+        createdAt: new Date().toISOString()
+      });
+      setView('list');
+      setSupplierForm({ name: '', company: '', phone: '', address: '' });
+    } catch (error) {
+      console.error('Add supplier failed', error);
+    }
+  };
+
+  const handleAddOrder = async () => {
+    if (!selectedSupplier || orderItems.length === 0) return;
+    setIsSubmitting(true);
+    const totalCost = orderItems.reduce((acc, item) => acc + (item.costPrice * item.quantity), 0);
+    const paid = Number(paidAmount);
+    const debt = totalCost - paid;
+
+    try {
+      const orderData: Omit<SupplyOrder, 'id'> = {
+        supplierId: selectedSupplier.id,
+        supplierName: selectedSupplier.name,
+        items: orderItems,
+        totalCost,
+        paidAmount: paid,
+        paymentStatus: paid >= totalCost ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'),
+        status: 'received', // Auto-received for simplicity in this version
+        ownerId: user.uid,
+        createdAt: Timestamp.now()
+      };
+
+      await addDoc(collection(db, 'supply_orders'), orderData);
+
+      // Update Product Stocks and Cost Prices
+      for (const item of orderItems) {
+        const productRef = doc(db, 'products', item.productId);
+        await updateDoc(productRef, {
+          stock: increment(item.quantity),
+          costPrice: item.costPrice // Update cost price to latest
+        });
+      }
+
+      // Update Supplier Debt
+      if (debt > 0) {
+        await updateDoc(doc(db, 'suppliers', selectedSupplier.id), {
+          totalDebt: increment(debt)
+        });
+      }
+
+      setView('details');
+      setOrderItems([]);
+      setPaidAmount('0');
+      alert('تم تسجيل التوريد وتحديث الستوك بنجاح!');
+    } catch (error) {
+      console.error('Order failed', error);
+      alert('وقع مشكل فالتسجيل');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const addToOrder = (product: Product) => {
+    setOrderItems(prev => {
+      const existing = prev.find(item => item.productId === product.id);
+      if (existing) {
+        return prev.map(item => item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      }
+      return [...prev, { productId: product.id, name: product.name, quantity: 1, costPrice: product.costPrice || 0 }];
+    });
+  };
+
+  const updateOrderItem = (productId: string, field: keyof SupplyOrderItem, value: number) => {
+    setOrderItems(prev => prev.map(item => item.productId === productId ? { ...item, [field]: value } : item));
+  };
+
+  const removeFromOrder = (productId: string) => {
+    setOrderItems(prev => prev.filter(item => item.productId !== productId));
+  };
+
+  useEffect(() => {
+    if (preselectedProduct && suppliers.length > 0) {
+      // If we have a pre-selected product, we try to open the first supplier for a new order
+      setSelectedSupplier(suppliers[0]);
+      setView('new-order');
+      addToOrder(preselectedProduct);
+      onClearPreselected?.();
+    }
+  }, [preselectedProduct, suppliers, onClearPreselected]);
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex justify-between items-center">
+        <h2 className="text-3xl font-black text-emerald-900">الموردين</h2>
+        {view === 'list' && (
+          <Button onClick={() => setView('add')} className="py-3 px-4 rounded-2xl">
+            <Plus className="w-5 h-5" />
+            <span>مورد جديد</span>
+          </Button>
+        )}
+        {view !== 'list' && (
+          <button onClick={() => setView('list')} className="p-3 bg-white rounded-2xl text-emerald-600 shadow-sm border border-emerald-50">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+        )}
+      </div>
+
+      {view === 'list' && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+          <Card className="bg-emerald-600 text-white border-none p-8 text-center space-y-2 shadow-xl shadow-emerald-100">
+            <p className="text-emerald-100 font-bold uppercase tracking-widest text-xs">ديون الموردين</p>
+            <div className="text-5xl font-black">{totalSupplierDebt} <span className="text-xl opacity-60">DH</span></div>
+          </Card>
+
+          <div className="space-y-3">
+            {suppliers.map(s => (
+              <button 
+                key={s.id} 
+                onClick={() => { setSelectedSupplier(s); setView('details'); }}
+                className="w-full bg-white p-5 rounded-[32px] border border-emerald-50 shadow-sm flex justify-between items-center active:scale-95 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="bg-emerald-50 p-3 rounded-2xl text-emerald-600">
+                    <Truck className="w-6 h-6" />
+                  </div>
+                  <div className="text-right">
+                    <div className="font-black text-slate-800 text-lg">{s.name}</div>
+                    <div className="text-slate-400 text-xs font-bold">{s.company || 'بدون شركة'}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className={cn("font-black text-xl", s.totalDebt > 0 ? "text-rose-600" : "text-emerald-600")}>
+                    {s.totalDebt} <span className="text-xs">DH</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase">الكريدي</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {view === 'add' && (
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+          <Card className="p-8 space-y-6">
+            <h3 className="text-xl font-black text-slate-900">معلومات المورد</h3>
+            <form onSubmit={handleAddSupplier} className="space-y-4">
+              <Input label="اسم المورد" value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} required />
+              <Input label="الشركة" value={supplierForm.company} onChange={e => setSupplierForm({...supplierForm, company: e.target.value})} />
+              <Input label="الهاتف" value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} />
+              <Input label="العنوان" value={supplierForm.address} onChange={e => setSupplierForm({...supplierForm, address: e.target.value})} />
+              <Button type="submit" className="w-full py-5">حفظ المورد</Button>
+            </form>
+          </Card>
+        </motion.div>
+      )}
+
+      {view === 'details' && selectedSupplier && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+          <Card className="p-8 text-center space-y-4">
+            <div className="bg-emerald-50 w-20 h-20 rounded-[32px] flex items-center justify-center mx-auto text-emerald-600">
+              <Truck className="w-10 h-10" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-slate-900">{selectedSupplier.name}</h3>
+              <p className="text-slate-400 font-bold">{selectedSupplier.company}</p>
+            </div>
+            <div className="bg-rose-50 p-6 rounded-3xl">
+              <p className="text-rose-600 text-xs font-bold uppercase tracking-widest mb-1">الكريدي اللي كيتسالني</p>
+              <p className="text-4xl font-black text-rose-700">{selectedSupplier.totalDebt} DH</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Button onClick={() => setView('new-order')} className="py-4 rounded-2xl text-sm">
+                <PlusCircle className="w-5 h-5" />
+                <span>توريد جديد</span>
+              </Button>
+              <Button variant="secondary" className="py-4 rounded-2xl text-sm" onClick={() => window.open(`tel:${selectedSupplier.phone}`)}>
+                <Phone className="w-5 h-5" />
+                <span>اتصال</span>
+              </Button>
+            </div>
+          </Card>
+
+          <div className="space-y-4">
+            <h4 className="font-black text-slate-800 ml-2">تاريخ التوريدات</h4>
+            {supplyOrders.filter(o => o.supplierId === selectedSupplier.id).map(order => (
+              <Card key={order.id} className="p-5 space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-bold text-slate-800">{format(order.createdAt.toDate(), 'dd/MM/yyyy')}</div>
+                    <div className="text-xs text-slate-400">{order.items.length} سلع</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-black text-emerald-600">{order.totalCost} DH</div>
+                    <div className={cn(
+                      "text-[10px] font-bold px-2 py-0.5 rounded-full inline-block",
+                      order.paymentStatus === 'paid' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+                    )}>
+                      {order.paymentStatus === 'paid' ? 'خالص' : 'باقي الكريدي'}
+                    </div>
+                  </div>
+                </div>
+                <div className="border-t border-slate-50 pt-3 space-y-1">
+                  {order.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-xs">
+                      <span className="text-slate-500">{item.name} x{item.quantity}</span>
+                      <span className="font-bold text-slate-700">{item.costPrice * item.quantity} DH</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {view === 'new-order' && selectedSupplier && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+          <Card className="p-6 space-y-4">
+            <h3 className="font-black text-slate-900">توريد جديد من {selectedSupplier.name}</h3>
+            
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-slate-400 uppercase">اختار السلعة</p>
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {products.map(p => (
+                  <button 
+                    key={p.id} 
+                    onClick={() => addToOrder(p)}
+                    className="shrink-0 bg-emerald-50 px-4 py-3 rounded-2xl text-emerald-700 font-bold text-sm border border-emerald-100"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4 border-t border-slate-50 pt-4">
+              {orderItems.map(item => (
+                <div key={item.productId} className="bg-slate-50 p-4 rounded-2xl space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-800">{item.name}</span>
+                    <button onClick={() => removeFromOrder(item.productId)} className="text-rose-500">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400">الكمية</label>
+                      <input 
+                        type="number" 
+                        className="w-full p-2 rounded-xl border border-slate-200" 
+                        value={item.quantity} 
+                        onChange={e => updateOrderItem(item.productId, 'quantity', Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400">ثمن الشراء (DH)</label>
+                      <input 
+                        type="number" 
+                        className="w-full p-2 rounded-xl border border-slate-200" 
+                        value={item.costPrice} 
+                        onChange={e => updateOrderItem(item.productId, 'costPrice', Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {orderItems.length > 0 && (
+              <div className="space-y-4 border-t border-slate-50 pt-4">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-slate-500">المجموع الكلي:</span>
+                  <span className="text-2xl font-black text-emerald-600">
+                    {orderItems.reduce((acc, item) => acc + (item.costPrice * item.quantity), 0)} DH
+                  </span>
+                </div>
+                <Input 
+                  label="المبلغ المدفوع (DH)" 
+                  type="number" 
+                  value={paidAmount} 
+                  onChange={e => setPaidAmount(e.target.value)} 
+                />
+                <Button onClick={handleAddOrder} className="w-full py-5" disabled={isSubmitting}>
+                  {isSubmitting ? 'جاري الحفظ...' : 'تأكيد التوريد'}
+                </Button>
+              </div>
+            )}
+          </Card>
+        </motion.div>
+      )}
+    </div>
   );
 }

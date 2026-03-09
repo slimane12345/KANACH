@@ -174,25 +174,43 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
+        "company": { "type": "string" },
         "phone": { "type": "string" },
-        "products": { "type": "array", "items": { "type": "string" } },
-        "ownerId": { "type": "string" }
+        "address": { "type": "string" },
+        "totalDebt": { "type": "number", "description": "Amount owed to this supplier" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "phone", "ownerId"]
+      "required": ["name", "ownerId", "totalDebt"]
     },
-    "Order": {
-      "title": "Order",
-      "description": "Order to supplier",
+    "SupplyOrder": {
+      "title": "SupplyOrder",
+      "description": "Purchase order from a supplier",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "shopId": { "type": "string" },
         "supplierId": { "type": "string" },
-        "products": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "quantity": { "type": "number" } } } },
-        "status": { "type": "string", "enum": ["pending", "confirmed", "delivered"] },
+        "supplierName": { "type": "string" },
+        "items": { 
+          "type": "array", 
+          "items": { 
+            "type": "object", 
+            "properties": { 
+              "productId": { "type": "string" },
+              "name": { "type": "string" }, 
+              "quantity": { "type": "number" },
+              "costPrice": { "type": "number" }
+            } 
+          } 
+        },
+        "totalCost": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["unpaid", "partial", "paid"] },
+        "status": { "type": "string", "enum": ["pending", "received"] },
+        "ownerId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["shopId", "supplierId", "products", "status", "createdAt"]
+      "required": ["supplierId", "items", "totalCost", "paidAmount", "paymentStatus", "status", "ownerId", "createdAt"]
     }
   },
   "firestore": {
@@ -240,9 +258,9 @@
       "schema": "Supplier",
       "description": "Product suppliers"
     },
-    "/orders/{orderId}": {
-      "schema": "Order",
-      "description": "Supplier orders"
+    "/supply_orders/{orderId}": {
+      "schema": "SupplyOrder",
+      "description": "Supplier purchase orders"
     }
   }
 }

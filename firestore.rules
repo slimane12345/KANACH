@@ -68,18 +68,21 @@ service cloud.firestore {
     }
 
     function isValidSupplier(data) {
-      return data.keys().hasAll(['name', 'phone', 'ownerId']) &&
+      return data.keys().hasAll(['name', 'ownerId', 'totalDebt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.phone is string && data.phone.size() > 0 && data.phone.size() < 20 &&
+             data.totalDebt is number &&
              data.ownerId is string;
     }
 
-    function isValidOrder(data) {
-      return data.keys().hasAll(['shopId', 'supplierId', 'products', 'status', 'createdAt']) &&
-             data.shopId is string &&
+    function isValidSupplyOrder(data) {
+      return data.keys().hasAll(['supplierId', 'items', 'totalCost', 'paidAmount', 'paymentStatus', 'status', 'ownerId', 'createdAt']) &&
              data.supplierId is string &&
-             data.products is list && data.products.size() > 0 &&
-             data.status in ['pending', 'confirmed', 'delivered'] &&
+             data.items is list && data.items.size() > 0 &&
+             data.totalCost is number &&
+             data.paidAmount is number &&
+             data.paymentStatus in ['unpaid', 'partial', 'paid'] &&
+             data.status in ['pending', 'received'] &&
+             data.ownerId is string &&
              data.createdAt is timestamp;
     }
 
@@ -156,10 +159,10 @@ service cloud.firestore {
       allow delete: if isDocOwner() || isAdmin();
     }
 
-    match /orders/{orderId} {
-      allow read: if (isAuthenticated() && request.auth.uid == resource.data.shopId) || isAdmin();
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.shopId && isValidOrder(request.resource.data);
-      allow update: if (isAuthenticated() && request.auth.uid == resource.data.shopId) || isAdmin();
+    match /supply_orders/{orderId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isNewDocOwner() && isValidSupplyOrder(request.resource.data);
+      allow update: if isDocOwner() && isNewDocOwner() && isValidSupplyOrder(request.resource.data);
       allow delete: if isAdmin();
     }
 
