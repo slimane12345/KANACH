@@ -67,6 +67,22 @@ service cloud.firestore {
              data.ownerId is string;
     }
 
+    function isValidSupplier(data) {
+      return data.keys().hasAll(['name', 'phone', 'ownerId']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() < 20 &&
+             data.ownerId is string;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['shopId', 'supplierId', 'products', 'status', 'createdAt']) &&
+             data.shopId is string &&
+             data.supplierId is string &&
+             data.products is list && data.products.size() > 0 &&
+             data.status in ['pending', 'confirmed', 'delivered'] &&
+             data.createdAt is timestamp;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -131,6 +147,20 @@ service cloud.firestore {
       allow create: if isNewDocOwner() && isValidCredit(request.resource.data);
       allow update: if isDocOwner() && isNewDocOwner() && isValidCredit(request.resource.data);
       allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /suppliers/{supplierId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isNewDocOwner() && isValidSupplier(request.resource.data);
+      allow update: if isDocOwner() && isNewDocOwner() && isValidSupplier(request.resource.data);
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if (isAuthenticated() && request.auth.uid == resource.data.shopId) || isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.shopId && isValidOrder(request.resource.data);
+      allow update: if (isAuthenticated() && request.auth.uid == resource.data.shopId) || isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /daily_reports/{reportId} {

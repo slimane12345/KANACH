@@ -33,15 +33,24 @@ interface SubscriptionPageProps {
   onBack: () => void;
 }
 
-const BANK_DETAILS = {
-  bankName: "CIH Bank",
-  accountName: "KANACH SAAS SOLUTIONS",
-  iban: "MA64 230 120 0000 1234 5678 9012 34",
-  amount: 50
+const PAYMENT_METHODS = {
+  bank: {
+    name: "تحويل بنكي",
+    bankName: "CIH Bank",
+    accountName: "KANACH SAAS SOLUTIONS",
+    iban: "MA64 230 120 0000 1234 5678 9012 34",
+    amount: 50
+  },
+  whatsapp: {
+    name: "واتساب باي / محفظة",
+    phone: "+212 600 000 000",
+    note: "صيفط لينا التوصيل فواتساب"
+  }
 };
 
 export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPageProps) {
   const [activeTab, setActiveTab] = useState<'status' | 'renew'>('status');
+  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'whatsapp'>('bank');
   const [loading, setLoading] = useState(false);
   const [proofs, setProofs] = useState<PaymentProof[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -64,7 +73,7 @@ export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPa
   }, [userProfile]);
 
   const handleCopyIban = () => {
-    navigator.clipboard.writeText(BANK_DETAILS.iban);
+    navigator.clipboard.writeText(PAYMENT_METHODS.bank.iban);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -97,7 +106,7 @@ export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPa
       await addDoc(collection(db, 'payment_proofs'), {
         shopId: userProfile.uid,
         shopName: userProfile.shopName || 'بدون اسم',
-        amount: BANK_DETAILS.amount,
+        amount: PAYMENT_METHODS.bank.amount || 50,
         imageUrl: imageUrl,
         status: 'pending',
         createdAt: Timestamp.now()
@@ -273,45 +282,78 @@ export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPa
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
-              {/* Bank Instructions */}
+              {/* Payment Method Selection */}
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={() => setPaymentMethod('bank')}
+                  className={cn(
+                    "p-4 rounded-2xl border-2 font-black text-sm transition-all",
+                    paymentMethod === 'bank' ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-500"
+                  )}
+                >
+                  {PAYMENT_METHODS.bank.name}
+                </button>
+                <button 
+                  onClick={() => setPaymentMethod('whatsapp')}
+                  className={cn(
+                    "p-4 rounded-2xl border-2 font-black text-sm transition-all",
+                    paymentMethod === 'whatsapp' ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-500"
+                  )}
+                >
+                  {PAYMENT_METHODS.whatsapp.name}
+                </button>
+              </div>
+
+              {/* Payment Details */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200 space-y-6">
                 <div className="flex items-center gap-3">
                   <div className="bg-emerald-100 p-2 rounded-xl text-emerald-600">
                     <AlertCircle className="w-5 h-5" />
                   </div>
-                  <h3 className="font-black text-slate-900">تعليمات الدفع البنكي</h3>
+                  <h3 className="font-black text-slate-900">
+                    {paymentMethod === 'bank' ? 'تعليمات التحويل البنكي' : 'تعليمات الواتساب / المحفظة'}
+                  </h3>
                 </div>
 
                 <div className="space-y-4">
                   <div className="p-4 bg-slate-50 rounded-2xl space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 font-bold">اسم البنك:</span>
-                      <span className="text-sm text-slate-900 font-black">{BANK_DETAILS.bankName}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-500 font-bold">اسم الحساب:</span>
-                      <span className="text-sm text-slate-900 font-black">{BANK_DETAILS.accountName}</span>
-                    </div>
-                    <div className="space-y-2 pt-2 border-t border-slate-200">
-                      <span className="text-xs text-slate-500 font-bold">رقم الحساب (IBAN):</span>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 bg-white p-3 rounded-xl border border-slate-200 text-xs font-mono text-slate-700 break-all">
-                          {BANK_DETAILS.iban}
-                        </code>
-                        <button 
-                          onClick={handleCopyIban}
-                          className="p-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors"
-                        >
-                          {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                        </button>
+                    {paymentMethod === 'bank' ? (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-500 font-bold">اسم البنك:</span>
+                          <span className="text-sm text-slate-900 font-black">{PAYMENT_METHODS.bank.bankName}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-slate-500 font-bold">اسم الحساب:</span>
+                          <span className="text-sm text-slate-900 font-black">{PAYMENT_METHODS.bank.accountName}</span>
+                        </div>
+                        <div className="space-y-2 pt-2 border-t border-slate-200">
+                          <span className="text-xs text-slate-500 font-bold">رقم الحساب (IBAN):</span>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 bg-white p-3 rounded-xl border border-slate-200 text-xs font-mono text-slate-700 break-all">
+                              {PAYMENT_METHODS.bank.iban}
+                            </code>
+                            <button 
+                              onClick={handleCopyIban}
+                              className="p-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors"
+                            >
+                              {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center space-y-2">
+                        <p className="text-sm font-black text-slate-900">{PAYMENT_METHODS.whatsapp.phone}</p>
+                        <p className="text-xs text-slate-500 font-bold">{PAYMENT_METHODS.whatsapp.note}</p>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex gap-3">
                     <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
                     <p className="text-xs text-amber-700 font-bold leading-relaxed">
-                      حول مبلغ <span className="font-black">50 درهم</span> بالضبط للحساب الفوق، ومن بعد صور التوصيل (Reçu) وصيفطو لينا هنا باش نفعلوا ليك الحساب.
+                      حول مبلغ <span className="font-black">50 درهم</span>، وصيفط لينا التوصيل (Reçu) باش نفعلوا ليك الحساب.
                     </p>
                   </div>
                 </div>

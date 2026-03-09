@@ -21,6 +21,7 @@ import {
   Search,
   AlertCircle
 } from 'lucide-react';
+import BarcodeScanner from './BarcodeScanner';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button, Card, Input } from '../App'; // Assuming these are exported or I'll need to redefine them
 
@@ -139,35 +140,12 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
         </button>
       </div>
 
-      {/* Scanner View (Simulated) */}
+      {/* Scanner View */}
       <div className="relative h-64 bg-slate-900 flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 opacity-30">
-          <div className="w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-500/20 via-transparent to-transparent"></div>
-        </div>
-        
-        <div className="relative z-10 text-center space-y-4">
-          <div className="w-48 h-32 border-2 border-emerald-500/50 rounded-2xl flex items-center justify-center relative">
-            <div className="absolute inset-x-0 h-0.5 bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)] animate-scan-line"></div>
-            <Smartphone className="w-12 h-12 text-emerald-500/50" />
-          </div>
-          <p className="text-emerald-400 font-bold text-sm animate-pulse">وجه الكاميرا للباركود...</p>
-        </div>
-
-        {/* Simulated Scan Buttons for Demo */}
-        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 px-4">
-          <button 
-            onClick={() => simulateScan('6111234567890')} 
-            className="bg-white/10 hover:bg-white/20 text-white text-[10px] px-3 py-1 rounded-full border border-white/20"
-          >
-            Scan Coca (Existing)
-          </button>
-          <button 
-            onClick={() => simulateScan('new-' + Math.random().toString(36).substring(7))} 
-            className="bg-white/10 hover:bg-white/20 text-white text-[10px] px-3 py-1 rounded-full border border-white/20"
-          >
-            Scan New Item
-          </button>
-        </div>
+        <BarcodeScanner 
+          onScan={(barcode) => handleBarcodeScanned(barcode)}
+          onError={(error) => console.log(error)}
+        />
       </div>
 
       {/* Scanned List */}

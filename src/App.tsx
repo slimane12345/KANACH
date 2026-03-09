@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import SmartInventoryScan from './components/SmartInventoryScan';
+import BarcodeScanner from './components/BarcodeScanner';
 import { auth, db } from './firebase';
 import { 
   signInWithPopup, 
@@ -691,11 +692,19 @@ function SalesView({ products, sales, customers, user }: { products: Product[]; 
       </div>
 
       {isScanning && (
-        <div className="bg-slate-900 rounded-3xl p-8 mb-4 text-center space-y-4 animate-pulse">
-          <div className="w-48 h-32 border-2 border-dashed border-emerald-500 mx-auto rounded-xl flex items-center justify-center">
-            <div className="w-full h-0.5 bg-emerald-500 animate-bounce"></div>
-          </div>
-          <p className="text-white font-bold">جاري مسح الباركود...</p>
+        <div className="bg-slate-900 rounded-3xl p-8 mb-4 text-center space-y-4">
+          <BarcodeScanner 
+            onScan={(barcode) => {
+              const product = products.find(p => p.barcode === barcode);
+              if (product) {
+                addToCart(product);
+                setIsScanning(false);
+              } else {
+                alert('هاد السلعة ما كايناش');
+              }
+            }}
+            onError={(error) => console.log(error)}
+          />
           <Button onClick={() => setIsScanning(false)} variant="ghost" className="text-white hover:bg-white/10">إلغاء</Button>
         </div>
       )}

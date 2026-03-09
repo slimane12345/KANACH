@@ -6,6 +6,7 @@ export interface Product {
   stock: number;
   lowStockThreshold: number;
   barcode?: string;
+  supplierId?: string;
   ownerId: string;
   createdAt: string;
 }
@@ -53,6 +54,8 @@ export interface UserProfile {
   referralCount?: number;
   subscriptionStatus?: 'active' | 'expired' | 'pending';
   subscriptionEndDate?: any;
+  trialStartDate?: any;
+  trialNotificationSent?: boolean;
   internalCredit?: number;
   createdAt?: string;
 }
@@ -134,4 +137,21 @@ export interface AppNotification {
   targetType?: 'all' | 'specific';
   targetUserId?: string;
   sentBy?: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string;
+  products: string[];
+  ownerId: string;
+}
+
+export interface Order {
+  id: string;
+  shopId: string;
+  supplierId: string;
+  products: { name: string; quantity: number }[];
+  status: 'pending' | 'confirmed' | 'delivered';
+  createdAt: any;
 }

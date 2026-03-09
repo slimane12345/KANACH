@@ -41,6 +41,8 @@
         "costPrice": { "type": "number" },
         "stock": { "type": "number" },
         "lowStockThreshold": { "type": "number" },
+        "barcode": { "type": "string" },
+        "supplierId": { "type": "string" },
         "ownerId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
@@ -164,6 +166,33 @@
         "sentBy": { "type": "string" }
       },
       "required": ["title", "message", "type", "read", "timestamp"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Product supplier",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "products": { "type": "array", "items": { "type": "string" } },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["name", "phone", "ownerId"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Order to supplier",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "shopId": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "products": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "quantity": { "type": "number" } } } },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "delivered"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["shopId", "supplierId", "products", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -206,6 +235,14 @@
     "/notifications/{notificationId}": {
       "schema": "AppNotification",
       "description": "App notifications"
+    },
+    "/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Product suppliers"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Supplier orders"
     }
   }
 }
