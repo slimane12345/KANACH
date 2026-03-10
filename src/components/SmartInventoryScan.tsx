@@ -41,7 +41,7 @@ interface ScannedItem {
 }
 
 export default function SmartInventoryScan({ user, onFinish, products }: SmartInventoryScanProps) {
-  const [isScanning, setIsScanning] = useState(true);
+  const [step, setStep] = useState<'scanning' | 'summary'>('scanning');
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [showNewProductForm, setShowNewProductForm] = useState<string | null>(null);
@@ -70,6 +70,13 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
     return map;
   }, [products]);
 
+  const stats = useMemo(() => {
+    const existing = scannedItems.filter(i => !i.isNew).length;
+    const newItems = scannedItems.filter(i => i.isNew).length;
+    const totalQty = scannedItems.reduce((acc, i) => acc + i.quantity, 0);
+    return { existing, newItems, totalQty };
+  }, [scannedItems]);
+
   const playBeep = () => {
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -89,6 +96,8 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
   };
 
   const handleBarcodeScanned = (barcode: string) => {
+    if (showNewProductForm) return; // Don't scan while form is open
+    
     setLastScanned(barcode);
     playBeep();
     
@@ -136,11 +145,10 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
     try {
       for (const item of scannedItems) {
         if (item.isNew && item.tempName && item.tempPrice) {
-          // Create new product
           await addDoc(collection(db, 'products'), {
             name: item.tempName,
             price: Number(item.tempPrice),
-            costPrice: Number(item.tempPrice) * 0.7, // Simulated cost price
+            costPrice: Number(item.tempPrice) * 0.7,
             stock: item.quantity,
             lowStockThreshold: 5,
             barcode: item.barcode,
@@ -148,7 +156,6 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
             createdAt: Timestamp.now()
           });
         } else if (item.product) {
-          // Update existing product stock
           await updateDoc(doc(db, 'products', item.product.id), {
             stock: item.product.stock + item.quantity
           });
@@ -162,6 +169,63 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
     }
   };
 
+  if (step === 'summary') {
+    return (
+      <div className="fixed inset-0 bg-slate-50 z-[100] flex flex-col">
+        <div className="bg-emerald-600 text-white p-6 flex justify-between items-center shadow-lg">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setStep('scanning')} className="p-2 hover:bg-white/10 rounded-xl">
+              <ArrowLeft className="w-6 h-6" />
+            </button>
+            <h2 className="text-xl font-black">ملخص الجرد</h2>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+          <div className="grid grid-cols-3 gap-4">
+            <Card className="text-center p-4 bg-white">
+              <div className="text-2xl font-black text-emerald-600">{stats.totalQty}</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase">مجموع القطع</div>
+            </Card>
+            <Card className="text-center p-4 bg-white">
+              <div className="text-2xl font-black text-blue-600">{stats.existing}</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase">سلعة كاينة</div>
+            </Card>
+            <Card className="text-center p-4 bg-white">
+              <div className="text-2xl font-black text-amber-600">{stats.newItems}</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase">سلعة جديدة</div>
+            </Card>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="font-black text-slate-800">تفاصيل السلع</h3>
+            {scannedItems.map((item) => (
+              <div key={item.barcode} className="bg-white p-4 rounded-3xl border border-slate-100 flex justify-between items-center">
+                <div>
+                  <div className="font-bold text-slate-800">
+                    {item.isNew ? (item.tempName || 'سلعة غير معروفة') : item.product?.name}
+                  </div>
+                  <div className="text-xs text-slate-400 font-mono">{item.barcode}</div>
+                </div>
+                <div className="text-xl font-black text-emerald-900">x{item.quantity}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-6 bg-white border-t border-slate-100">
+          <Button 
+            onClick={handleFinish} 
+            disabled={saving}
+            className="w-full py-4 text-lg"
+          >
+            {saving ? 'جاري الحفظ...' : 'تأكيد وحفظ الكل'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-slate-50 z-[100] flex flex-col">
       {/* Header */}
@@ -173,11 +237,11 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
           <h2 className="text-xl font-black">جرد السلعة (Scan)</h2>
         </div>
         <button 
-          onClick={handleFinish}
-          disabled={scannedItems.length === 0 || saving}
+          onClick={() => setStep('summary')}
+          disabled={scannedItems.length === 0}
           className="bg-white text-emerald-600 px-6 py-2 rounded-xl font-black disabled:opacity-50"
         >
-          {saving ? 'جاري الحفظ...' : 'حفظ الكل'}
+          مراجعة ({scannedItems.length})
         </button>
       </div>
 
