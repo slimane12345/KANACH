@@ -1,5 +1,5 @@
 {
-  "name": "KANACH",
-  "description": "A simple digital notebook for Moroccan shop owners to manage sales, stock, and customer debts in Darija.",
-  "requestFramePermissions": []
+  "name": "POS Product Manager",
+  "description": "A POS application feature for small shop owners to manage products with image uploads, camera support, and local storage.",
+  "requestFramePermissions": ["camera"]
 }

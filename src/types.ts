@@ -22,6 +22,7 @@ export interface Product {
   categoryId?: string;
   categoryName?: string;
   imageUrl?: string;
+  localImageId?: string;
   supplierId?: string;
   ownerId: string;
   createdAt: string;

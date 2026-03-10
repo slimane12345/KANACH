@@ -93,7 +93,10 @@ import CustomerCreditPage from './components/CustomerCreditPage';
 import SubscriptionPage from './components/SubscriptionPage';
 import { QRCodeSVG } from 'qrcode.react';
 import { utils, read, writeFile } from 'xlsx';
-import { FileUp, FileDown, Download, Tags, Star, Zap, TrendingUp, Sparkles } from 'lucide-react';
+import { FileUp, FileDown, Download, Tags, Star, Zap, TrendingUp, Sparkles, Upload, Camera, X, Image as ImageIcon } from 'lucide-react';
+import imageCompression from 'browser-image-compression';
+import { db as localDb } from './db';
+import { CameraModal } from './components/CameraModal';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -1052,9 +1055,13 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
                 lastAddedId === product.id ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-emerald-50"
               )}
             >
-              {product.imageUrl ? (
+              {product.localImageId || product.imageUrl ? (
                 <div className="absolute inset-0 opacity-10 group-active:opacity-30 transition-opacity">
-                  <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  {product.localImageId ? (
+                    <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} />
+                  ) : (
+                    <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  )}
                 </div>
               ) : (
                 <div className="absolute top-0 right-0 p-2 opacity-10 group-active:opacity-30 transition-opacity">
@@ -1326,6 +1333,31 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
   );
 }
 
+// --- Local Image Component ---
+const LocalProductImage = ({ localImageId, fallbackIcon: Icon }: { localImageId?: string; fallbackIcon: any }) => {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (localImageId) {
+      localDb.products.get(Number(localImageId)).then(p => {
+        if (p?.imageData) {
+          const objectUrl = URL.createObjectURL(p.imageData);
+          setUrl(objectUrl);
+        }
+      });
+    }
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [localImageId]);
+
+  if (url) {
+    return <img src={url} alt="Product" className="w-full h-full object-cover rounded-2xl" referrerPolicy="no-referrer" />;
+  }
+
+  return <Icon className="w-6 h-6" />;
+};
+
 function ProductsView({ products, categories, user, prefilledBarcode, onClearPrefilled, onOpenSuppliers }: { products: Product[]; categories: Category[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void; onOpenSuppliers: (p?: Product) => void }) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -1343,8 +1375,35 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
     barcode: '',
     categoryId: '',
     imageUrl: '',
+    localImageId: '',
     bulkBarcodes: [] as BulkBarcode[]
   });
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const processImage = async (file: Blob) => {
+    try {
+      const options = {
+        maxSizeMB: 0.5,
+        maxWidthOrHeight: 800,
+        useWebWorker: true,
+      };
+      const compressedFile = await imageCompression(file as File, options);
+      setImageBlob(compressedFile);
+      setImagePreview(URL.createObjectURL(compressedFile));
+    } catch (error) {
+      console.error("Compression error:", error);
+      setImageBlob(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await processImage(file);
+  };
 
   useEffect(() => {
     if (prefilledBarcode) {
@@ -1365,10 +1424,23 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
         barcode: editingProduct.barcode || '',
         categoryId: editingProduct.categoryId || '',
         imageUrl: editingProduct.imageUrl || '',
+        localImageId: editingProduct.localImageId || '',
         bulkBarcodes: editingProduct.bulkBarcodes || []
       });
+      
+      if (editingProduct.localImageId) {
+        localDb.products.get(Number(editingProduct.localImageId)).then(p => {
+          if (p?.imageData) {
+            setImagePreview(URL.createObjectURL(p.imageData));
+          }
+        });
+      } else {
+        setImagePreview(null);
+      }
     } else {
-      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', imageUrl: '', bulkBarcodes: [] });
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', imageUrl: '', localImageId: '', bulkBarcodes: [] });
+      setImageBlob(null);
+      setImagePreview(null);
     }
   }, [editingProduct]);
 
@@ -1477,6 +1549,18 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
     e.preventDefault();
     try {
       const selectedCategory = categories.find(c => c.id === formData.categoryId);
+      
+      let localImageId = formData.localImageId;
+      if (imageBlob) {
+        const localId = await localDb.products.put({
+          name: formData.name,
+          price: Number(formData.price),
+          imageData: imageBlob,
+          createdAt: Date.now()
+        });
+        localImageId = localId.toString();
+      }
+
       const productData = {
         name: formData.name,
         price: Number(formData.price),
@@ -1485,6 +1569,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
         lowStockThreshold: Number(formData.lowStockThreshold),
         barcode: formData.barcode,
         imageUrl: formData.imageUrl,
+        localImageId: localImageId,
         bulkBarcodes: formData.bulkBarcodes,
         categoryId: formData.categoryId,
         categoryName: selectedCategory ? selectedCategory.name : '',
@@ -1499,16 +1584,21 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
         await addDoc(collection(db, 'products'), productData);
         setIsAdding(false);
       }
-      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', imageUrl: '', bulkBarcodes: [] });
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', imageUrl: '', localImageId: '', bulkBarcodes: [] });
+      setImageBlob(null);
+      setImagePreview(null);
     } catch (error) {
       console.error('Save product failed', error);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (product: Product) => {
     if (window.confirm('واش متيقن بغيتي تمسح هاد السلعة؟')) {
       try {
-        await deleteDoc(doc(db, 'products', id));
+        await deleteDoc(doc(db, 'products', product.id));
+        if (product.localImageId) {
+          await localDb.products.delete(Number(product.localImageId));
+        }
       } catch (error) {
         console.error('Delete product failed', error);
       }
@@ -1654,12 +1744,52 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
               value={formData.barcode}
               onChange={e => setFormData({...formData, barcode: e.target.value})}
             />
-            <Input 
-              label="رابط الصورة (اختياري)" 
-              placeholder="https://example.com/image.jpg" 
-              value={formData.imageUrl}
-              onChange={e => setFormData({...formData, imageUrl: e.target.value})}
-            />
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-400 mr-2 uppercase">صورة المنتج</label>
+              {imagePreview ? (
+                <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-emerald-100 bg-emerald-50">
+                  <img src={imagePreview} alt="Preview" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageBlob(null);
+                      setImagePreview(null);
+                      setFormData(prev => ({ ...prev, localImageId: '' }));
+                    }}
+                    className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white backdrop-blur-sm hover:bg-black/70"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/30 py-6 transition-colors hover:border-emerald-500 hover:bg-emerald-50/50"
+                  >
+                    <Upload className="text-emerald-400" size={24} />
+                    <span className="text-xs font-bold text-emerald-700">تحميل صورة</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setIsCameraOpen(true)}
+                    className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/30 py-6 transition-colors hover:border-emerald-500 hover:bg-emerald-50/50"
+                  >
+                    <Camera className="text-emerald-400" size={24} />
+                    <span className="text-xs font-bold text-emerald-700">تصوير</span>
+                  </button>
+                </div>
+              )}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleImageSelect}
+                accept="image/*"
+                className="hidden"
+              />
+            </div>
             
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-400 mr-2 uppercase">التصنيف</label>
@@ -1769,6 +1899,12 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
         </Card>
       )}
 
+      <CameraModal
+        isOpen={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onCapture={processImage}
+      />
+
       <div className="grid gap-4">
         {products.map(product => {
           const isLowStock = product.stock <= product.lowStockThreshold;
@@ -1779,10 +1915,10 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
             )}>
               <div className="flex items-center gap-4">
                 <div className={cn(
-                  "p-3 rounded-2xl",
+                  "w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden shrink-0",
                   isLowStock ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"
                 )}>
-                  <Package className="w-6 h-6" />
+                  <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} />
                 </div>
                 <div>
                   <div className="font-bold text-lg">{product.name}</div>
@@ -1805,7 +1941,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
                   <Pencil className="w-5 h-5" />
                 </button>
                 <button 
-                  onClick={() => handleDelete(product.id)}
+                  onClick={() => handleDelete(product)}
                   className="p-2 text-rose-400 hover:bg-rose-50 rounded-xl transition-colors"
                   title="مسح"
                 >
