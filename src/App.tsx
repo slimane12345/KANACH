@@ -48,7 +48,6 @@ import {
   Plus, 
   Search, 
   LogOut, 
-  TrendingUp, 
   AlertTriangle,
   AlertCircle,
   CheckCircle2,
@@ -62,6 +61,7 @@ import {
   Check,
   ScanLine,
   PlusCircle,
+  Minus,
   CreditCard,
   Wallet,
   QrCode,
@@ -93,7 +93,7 @@ import CustomerCreditPage from './components/CustomerCreditPage';
 import SubscriptionPage from './components/SubscriptionPage';
 import { QRCodeSVG } from 'qrcode.react';
 import { utils, read, writeFile } from 'xlsx';
-import { FileUp, FileDown, Download, Tags } from 'lucide-react';
+import { FileUp, FileDown, Download, Tags, Star, Zap, TrendingUp, Sparkles } from 'lucide-react';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -647,6 +647,8 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'qr' | null>(null);
   const [selectedCustomerForCredit, setSelectedCustomerForCredit] = useState<string>('');
   const [isScanning, setIsScanning] = useState(false);
+  const [isCartBouncing, setIsCartBouncing] = useState(false);
+  const [lastAddedId, setLastAddedId] = useState<string | null>(null);
   const [recentScans, setRecentScans] = useState<{ id: string; name: string; price: number; time: number }[]>([]);
 
   useEffect(() => {
@@ -702,6 +704,12 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
       .map(([id]) => id);
   }, [sales]);
 
+  const mostSoldProducts = useMemo(() => {
+    return mostSoldIds
+      .map(id => products.find(p => p.id === id))
+      .filter((p): p is Product => !!p);
+  }, [mostSoldIds, products]);
+
   const sortedProducts = useMemo(() => {
     return [...products].sort((a, b) => {
       const aIndex = mostSoldIds.indexOf(a.id);
@@ -731,6 +739,13 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
       ...prev,
       [product.id]: (prev[product.id] || 0) + 1
     }));
+    playBeep();
+    setIsCartBouncing(true);
+    setLastAddedId(product.id);
+    setTimeout(() => {
+      setIsCartBouncing(false);
+      setLastAddedId(null);
+    }, 300);
   };
 
   const removeFromCart = (productId: string) => {
@@ -898,14 +913,13 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
       </div>
 
       {isScanning && (
-        <div className="bg-slate-900 rounded-3xl p-4 mb-4 text-center space-y-4 relative overflow-hidden">
+        <div className="bg-slate-900 rounded-3xl p-2 mb-4 text-center relative overflow-hidden h-40">
           <BarcodeScanner 
-            cooldownMs={500}
+            cooldownMs={800}
             onScan={(barcode) => {
               const product = barcodeMap.get(barcode);
               if (product) {
                 addToCart(product);
-                playBeep();
                 
                 // Add to recent scans
                 const newScan = { 
@@ -980,6 +994,43 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
         </div>
       )}
 
+      {/* Top Products (Most Sold) */}
+      {mostSoldProducts.length > 0 && selectedCategory === 'all' && !search && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3 mr-2">
+            <TrendingUp className="w-4 h-4 text-emerald-600" />
+            <h3 className="text-xs font-black text-emerald-900/40 uppercase tracking-widest">الأكثر مبيعاً</h3>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+            {mostSoldProducts.map(product => (
+              <motion.button
+                key={`top-${product.id}`}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => addToCart(product)}
+                className="bg-white border border-emerald-100 p-4 rounded-[32px] shadow-sm min-w-[140px] text-right flex flex-col justify-between h-32 relative overflow-hidden group hover:border-emerald-500 transition-colors"
+              >
+                {product.imageUrl ? (
+                  <div className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  </div>
+                ) : (
+                  <div className="absolute -top-2 -right-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <Sparkles className="w-16 h-16 text-emerald-600" />
+                  </div>
+                )}
+                <div className="font-black text-lg leading-tight text-slate-800 z-10">{product.name}</div>
+                <div className="flex justify-between items-end">
+                  <div className="font-black text-xl text-emerald-600">{product.price} DH</div>
+                  <div className="bg-emerald-50 text-emerald-600 p-1.5 rounded-xl">
+                    <Zap className="w-3 h-3 fill-emerald-600" />
+                  </div>
+                </div>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Product Grid */}
       <div className="flex-1 overflow-y-auto pb-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -996,12 +1047,21 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
               key={product.id}
               whileTap={{ scale: 0.95 }}
               onClick={() => addToCart(product)}
-              className="bg-white p-4 rounded-[32px] border border-emerald-50 shadow-sm flex flex-col justify-between items-start transition-all h-32 relative overflow-hidden group"
+              className={cn(
+                "bg-white p-4 rounded-[32px] border shadow-sm flex flex-col justify-between items-start transition-all h-32 relative overflow-hidden group",
+                lastAddedId === product.id ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-emerald-50"
+              )}
             >
-              <div className="absolute top-0 right-0 p-2 opacity-10 group-active:opacity-30 transition-opacity">
-                <Package className="w-12 h-12" />
-              </div>
-              <div className="font-black text-slate-800 text-lg leading-tight text-left w-full truncate">
+              {product.imageUrl ? (
+                <div className="absolute inset-0 opacity-10 group-active:opacity-30 transition-opacity">
+                  <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                </div>
+              ) : (
+                <div className="absolute top-0 right-0 p-2 opacity-10 group-active:opacity-30 transition-opacity">
+                  <Package className="w-12 h-12" />
+                </div>
+              )}
+              <div className="font-black text-slate-800 text-lg leading-tight text-left w-full truncate z-10">
                 {product.name}
               </div>
               <div className="flex justify-between items-end w-full">
@@ -1027,9 +1087,16 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
         {cartItems.length > 0 && (
           <motion.div 
             initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
+            animate={{ 
+              y: 0, 
+              opacity: 1,
+              scale: isCartBouncing ? [1, 1.02, 1] : 1
+            }}
             exit={{ y: 100, opacity: 0 }}
-            className="bg-white border-t border-emerald-100 rounded-t-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] p-6 -mx-4 space-y-4"
+            className={cn(
+              "bg-white border-t border-emerald-100 rounded-t-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] p-6 -mx-4 space-y-4 transition-colors",
+              isCartBouncing ? "bg-emerald-50" : "bg-white"
+            )}
           >
             <div className="flex justify-between items-center px-2">
               <div className="flex items-center gap-2">
@@ -1042,6 +1109,33 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">المجموع</p>
                 <p className="text-3xl font-black text-emerald-900">{total} DH</p>
               </div>
+            </div>
+
+            {/* Quick Cart List */}
+            <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+              {cartItems.map(item => (
+                <div key={`quick-${item.product.id}`} className="bg-slate-50 border border-slate-100 p-2 rounded-2xl flex items-center gap-3 min-w-[180px]">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">{item.product.name}</p>
+                    <p className="text-[10px] font-black text-emerald-600">{item.product.price * item.quantity} DH</p>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white rounded-lg p-0.5 shadow-sm">
+                    <button 
+                      onClick={() => removeFromCart(item.product.id)}
+                      className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-rose-500"
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <span className="font-black text-xs w-3 text-center">{item.quantity}</span>
+                    <button 
+                      onClick={() => addToCart(item.product)}
+                      className="w-6 h-6 flex items-center justify-center text-emerald-600"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="flex gap-3">
@@ -1093,9 +1187,23 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
                         </div>
                       )}
                     </div>
-                    <div className="text-slate-400 text-sm">x{item.quantity}</div>
                   </div>
-                  <div className="font-black text-emerald-600">{item.product.price * item.quantity} DH</div>
+                  <div className="flex items-center gap-3 bg-white p-1 rounded-xl shadow-sm border border-slate-100">
+                    <button 
+                      onClick={() => removeFromCart(item.product.id)}
+                      className="w-8 h-8 flex items-center justify-center bg-slate-50 rounded-lg text-slate-400 hover:text-rose-500 transition-colors"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="font-black text-slate-900 w-4 text-center">{item.quantity}</span>
+                    <button 
+                      onClick={() => addToCart(item.product)}
+                      className="w-8 h-8 flex items-center justify-center bg-emerald-600 rounded-lg text-white shadow-sm active:scale-90 transition-transform"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="font-black text-emerald-600 min-w-[60px] text-left">{item.product.price * item.quantity} DH</div>
                 </div>
               ))}
             </div>
@@ -1234,6 +1342,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
     lowStockThreshold: '5',
     barcode: '',
     categoryId: '',
+    imageUrl: '',
     bulkBarcodes: [] as BulkBarcode[]
   });
 
@@ -1255,10 +1364,11 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
         lowStockThreshold: editingProduct.lowStockThreshold.toString(),
         barcode: editingProduct.barcode || '',
         categoryId: editingProduct.categoryId || '',
+        imageUrl: editingProduct.imageUrl || '',
         bulkBarcodes: editingProduct.bulkBarcodes || []
       });
     } else {
-      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', bulkBarcodes: [] });
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', imageUrl: '', bulkBarcodes: [] });
     }
   }, [editingProduct]);
 
@@ -1374,6 +1484,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
         stock: Number(formData.stock),
         lowStockThreshold: Number(formData.lowStockThreshold),
         barcode: formData.barcode,
+        imageUrl: formData.imageUrl,
         bulkBarcodes: formData.bulkBarcodes,
         categoryId: formData.categoryId,
         categoryName: selectedCategory ? selectedCategory.name : '',
@@ -1388,7 +1499,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
         await addDoc(collection(db, 'products'), productData);
         setIsAdding(false);
       }
-      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', bulkBarcodes: [] });
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', imageUrl: '', bulkBarcodes: [] });
     } catch (error) {
       console.error('Save product failed', error);
     }
@@ -1542,6 +1653,12 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
               placeholder="سكاني الباركود هنا..." 
               value={formData.barcode}
               onChange={e => setFormData({...formData, barcode: e.target.value})}
+            />
+            <Input 
+              label="رابط الصورة (اختياري)" 
+              placeholder="https://example.com/image.jpg" 
+              value={formData.imageUrl}
+              onChange={e => setFormData({...formData, imageUrl: e.target.value})}
             />
             
             <div className="space-y-1">

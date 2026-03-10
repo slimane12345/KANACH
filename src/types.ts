@@ -21,6 +21,7 @@ export interface Product {
   bulkBarcodes?: BulkBarcode[];
   categoryId?: string;
   categoryName?: string;
+  imageUrl?: string;
   supplierId?: string;
   ownerId: string;
   createdAt: string;
