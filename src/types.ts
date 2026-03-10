@@ -1,3 +1,9 @@
+export interface BulkBarcode {
+  barcode: string;
+  quantity: number;
+  label: string; // e.g., "Carton of 20"
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -6,6 +12,7 @@ export interface Product {
   stock: number;
   lowStockThreshold: number;
   barcode?: string;
+  bulkBarcodes?: BulkBarcode[];
   supplierId?: string;
   ownerId: string;
   createdAt: string;

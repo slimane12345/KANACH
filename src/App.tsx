@@ -66,6 +66,7 @@ import {
   Wallet,
   QrCode,
   Trash2,
+  Pencil,
   Bell,
   ArrowUpRight,
   ArrowDownRight,
@@ -86,7 +87,7 @@ import {
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Product, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification, Supplier, SupplyOrder, SupplyOrderItem } from './types';
+import { Product, BulkBarcode, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification, Supplier, SupplyOrder, SupplyOrderItem } from './types';
 import AdminDashboard from './components/AdminDashboard';
 import CustomerCreditPage from './components/CustomerCreditPage';
 import SubscriptionPage from './components/SubscriptionPage';
@@ -1181,6 +1182,7 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
 
 function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOpenSuppliers }: { products: Product[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void; onOpenSuppliers: (p?: Product) => void }) {
   const [isAdding, setIsAdding] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importSummary, setImportSummary] = useState<{ success: number; errors: string[] } | null>(null);
   const [isScanMode, setIsScanMode] = useState(false);
@@ -1190,7 +1192,8 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
     costPrice: '',
     stock: '',
     lowStockThreshold: '5',
-    barcode: ''
+    barcode: '',
+    bulkBarcodes: [] as BulkBarcode[]
   });
 
   useEffect(() => {
@@ -1200,6 +1203,22 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
       if (onClearPrefilled) onClearPrefilled();
     }
   }, [prefilledBarcode, onClearPrefilled]);
+
+  useEffect(() => {
+    if (editingProduct) {
+      setFormData({
+        name: editingProduct.name,
+        price: editingProduct.price.toString(),
+        costPrice: editingProduct.costPrice.toString(),
+        stock: editingProduct.stock.toString(),
+        lowStockThreshold: editingProduct.lowStockThreshold.toString(),
+        barcode: editingProduct.barcode || '',
+        bulkBarcodes: editingProduct.bulkBarcodes || []
+      });
+    } else {
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', bulkBarcodes: [] });
+    }
+  }, [editingProduct]);
 
   const handleExport = () => {
     const data = products.map(p => ({
@@ -1290,20 +1309,38 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'products'), {
+      const productData = {
         name: formData.name,
         price: Number(formData.price),
         costPrice: Number(formData.costPrice),
         stock: Number(formData.stock),
         lowStockThreshold: Number(formData.lowStockThreshold),
         barcode: formData.barcode,
+        bulkBarcodes: formData.bulkBarcodes,
         ownerId: user.uid,
-        createdAt: Timestamp.now()
-      });
-      setIsAdding(false);
-      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '' });
+        createdAt: editingProduct ? editingProduct.createdAt : Timestamp.now()
+      };
+
+      if (editingProduct) {
+        await updateDoc(doc(db, 'products', editingProduct.id), productData);
+        setEditingProduct(null);
+      } else {
+        await addDoc(collection(db, 'products'), productData);
+        setIsAdding(false);
+      }
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', bulkBarcodes: [] });
     } catch (error) {
-      console.error('Add product failed', error);
+      console.error('Save product failed', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('واش متيقن بغيتي تمسح هاد السلعة؟')) {
+      try {
+        await deleteDoc(doc(db, 'products', id));
+      } catch (error) {
+        console.error('Delete product failed', error);
+      }
     }
   };
 
@@ -1381,11 +1418,11 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
         </Card>
       )}
 
-      {isAdding && (
+      {(isAdding || editingProduct) && (
         <Card className="space-y-4">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-xl font-bold">زيد سلعة جديدة</h3>
-            <button onClick={() => setIsAdding(false)}><XCircle className="text-rose-400" /></button>
+            <h3 className="text-xl font-bold">{editingProduct ? 'تعديل السلعة' : 'زيد سلعة جديدة'}</h3>
+            <button onClick={() => { setIsAdding(false); setEditingProduct(null); }}><XCircle className="text-rose-400" /></button>
           </div>
           <form onSubmit={handleAdd} className="space-y-4">
             <Input 
@@ -1401,6 +1438,64 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
               value={formData.barcode}
               onChange={e => setFormData({...formData, barcode: e.target.value})}
             />
+            
+            {/* Bulk Barcodes Section */}
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <div className="flex justify-between items-center">
+                <h4 className="text-sm font-black text-slate-700">باركود الكرتونة (Bulk)</h4>
+                <button 
+                  type="button" 
+                  onClick={() => setFormData(prev => ({
+                    ...prev, 
+                    bulkBarcodes: [...prev.bulkBarcodes, { barcode: '', quantity: 20, label: 'كرتونة' }]
+                  }))}
+                  className="text-emerald-600 text-xs font-bold flex items-center gap-1 hover:bg-emerald-50 px-2 py-1 rounded-lg transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> زيد باركود
+                </button>
+              </div>
+              
+              {formData.bulkBarcodes.map((bb, idx) => (
+                <div key={idx} className="flex gap-2 items-end bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                  <div className="flex-1">
+                    <Input 
+                      label="الباركود" 
+                      value={bb.barcode} 
+                      onChange={e => {
+                        const newBB = [...formData.bulkBarcodes];
+                        newBB[idx].barcode = e.target.value;
+                        setFormData({...formData, bulkBarcodes: newBB});
+                      }}
+                      className="bg-white"
+                    />
+                  </div>
+                  <div className="w-20">
+                    <Input 
+                      label="العدد" 
+                      type="number"
+                      value={bb.quantity} 
+                      onChange={e => {
+                        const newBB = [...formData.bulkBarcodes];
+                        newBB[idx].quantity = Number(e.target.value);
+                        setFormData({...formData, bulkBarcodes: newBB});
+                      }}
+                      className="bg-white"
+                    />
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const newBB = formData.bulkBarcodes.filter((_, i) => i !== idx);
+                      setFormData({...formData, bulkBarcodes: newBB});
+                    }}
+                    className="p-2 text-rose-400 hover:text-rose-600"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <Input 
                 label="ثمن البيع (DH)" 
@@ -1433,7 +1528,7 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
                 required
               />
             </div>
-            <Button type="submit" className="w-full">حفظ السلعة</Button>
+            <Button type="submit" className="w-full">{editingProduct ? 'تحديث السلعة' : 'حفظ السلعة'}</Button>
           </form>
         </Card>
       )}
@@ -1465,7 +1560,21 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setEditingProduct(product)}
+                  className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
+                  title="تعديل"
+                >
+                  <Pencil className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => handleDelete(product.id)}
+                  className="p-2 text-rose-400 hover:bg-rose-50 rounded-xl transition-colors"
+                  title="مسح"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
                 {isLowStock && (
                   <button 
                     onClick={() => onOpenSuppliers(product)}

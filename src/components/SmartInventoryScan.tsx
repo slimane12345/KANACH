@@ -57,6 +57,19 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
     return map;
   }, [products]);
 
+  // Map for bulk barcodes (cartons/boxes)
+  const bulkBarcodeMap = useMemo(() => {
+    const map = new Map<string, { product: Product; quantity: number; label: string }>();
+    products.forEach(p => {
+      if (p.bulkBarcodes) {
+        p.bulkBarcodes.forEach(bb => {
+          map.set(bb.barcode, { product: p, quantity: bb.quantity, label: bb.label });
+        });
+      }
+    });
+    return map;
+  }, [products]);
+
   const playBeep = () => {
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -84,9 +97,15 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
       
       if (existingIndex !== -1) {
         const newItems = [...prev];
-        newItems[existingIndex].quantity += 1;
+        const bulkMatch = bulkBarcodeMap.get(barcode);
+        newItems[existingIndex].quantity += bulkMatch ? bulkMatch.quantity : 1;
         return newItems;
       } else {
+        const bulkMatch = bulkBarcodeMap.get(barcode);
+        if (bulkMatch) {
+          return [...prev, { barcode, product: bulkMatch.product, quantity: bulkMatch.quantity, isNew: false }];
+        }
+
         const existingProduct = barcodeMap.get(barcode);
         if (existingProduct) {
           return [...prev, { barcode, product: existingProduct, quantity: 1, isNew: false }];
