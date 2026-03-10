@@ -662,6 +662,25 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
     return map;
   }, [products]);
 
+  // Map for bulk barcodes (cartons/boxes)
+  const bulkBarcodeMap = useMemo(() => {
+    const map = new Map<string, { product: Product; quantity: number }>();
+    products.forEach(p => {
+      if (p.packBarcode && p.unitsPerPack) {
+        map.set(p.packBarcode, { product: p, quantity: p.unitsPerPack });
+      }
+      if (p.cartonBarcode && p.unitsPerCarton) {
+        map.set(p.cartonBarcode, { product: p, quantity: p.unitsPerCarton });
+      }
+      if (p.bulkBarcodes) {
+        p.bulkBarcodes.forEach(bb => {
+          map.set(bb.barcode, { product: p, quantity: bb.quantity });
+        });
+      }
+    });
+    return map;
+  }, [products]);
+
   const playBeep = () => {
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -714,10 +733,10 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
 
   const total = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, quantity: number = 1) => {
     setCart(prev => ({
       ...prev,
-      [product.id]: (prev[product.id] || 0) + 1
+      [product.id]: (prev[product.id] || 0) + quantity
     }));
   };
 
@@ -865,6 +884,21 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
           <BarcodeScanner 
             cooldownMs={500}
             onScan={(barcode) => {
+              const bulkMatch = bulkBarcodeMap.get(barcode);
+              if (bulkMatch) {
+                addToCart(bulkMatch.product, bulkMatch.quantity);
+                playBeep();
+                const newScan = { 
+                  id: Math.random().toString(), 
+                  name: `${bulkMatch.product.name} (x${bulkMatch.quantity})`, 
+                  price: bulkMatch.product.price * bulkMatch.quantity, 
+                  time: Date.now() 
+                };
+                setRecentScans(prev => [newScan, ...prev].slice(0, 3));
+                setScanError(null);
+                return;
+              }
+
               const product = barcodeMap.get(barcode);
               if (product) {
                 addToCart(product);
@@ -1193,6 +1227,10 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
     stock: '',
     lowStockThreshold: '5',
     barcode: '',
+    packBarcode: '',
+    cartonBarcode: '',
+    unitsPerPack: '6',
+    unitsPerCarton: '24',
     bulkBarcodes: [] as BulkBarcode[]
   });
 
@@ -1213,10 +1251,26 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
         stock: editingProduct.stock.toString(),
         lowStockThreshold: editingProduct.lowStockThreshold.toString(),
         barcode: editingProduct.barcode || '',
+        packBarcode: editingProduct.packBarcode || '',
+        cartonBarcode: editingProduct.cartonBarcode || '',
+        unitsPerPack: (editingProduct.unitsPerPack || 6).toString(),
+        unitsPerCarton: (editingProduct.unitsPerCarton || 24).toString(),
         bulkBarcodes: editingProduct.bulkBarcodes || []
       });
     } else {
-      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', bulkBarcodes: [] });
+      setFormData({ 
+        name: '', 
+        price: '', 
+        costPrice: '', 
+        stock: '', 
+        lowStockThreshold: '5', 
+        barcode: '', 
+        packBarcode: '',
+        cartonBarcode: '',
+        unitsPerPack: '6',
+        unitsPerCarton: '24',
+        bulkBarcodes: [] 
+      });
     }
   }, [editingProduct]);
 
@@ -1316,6 +1370,10 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
         stock: Number(formData.stock),
         lowStockThreshold: Number(formData.lowStockThreshold),
         barcode: formData.barcode,
+        packBarcode: formData.packBarcode,
+        cartonBarcode: formData.cartonBarcode,
+        unitsPerPack: Number(formData.unitsPerPack),
+        unitsPerCarton: Number(formData.unitsPerCarton),
         bulkBarcodes: formData.bulkBarcodes,
         ownerId: user.uid,
         createdAt: editingProduct ? editingProduct.createdAt : Timestamp.now()
@@ -1328,7 +1386,20 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
         await addDoc(collection(db, 'products'), productData);
         setIsAdding(false);
       }
-      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', bulkBarcodes: [] });
+      setEditingProduct(null);
+      setFormData({ 
+        name: '', 
+        price: '', 
+        costPrice: '', 
+        stock: '', 
+        lowStockThreshold: '5', 
+        barcode: '', 
+        packBarcode: '',
+        cartonBarcode: '',
+        unitsPerPack: '6',
+        unitsPerCarton: '24',
+        bulkBarcodes: [] 
+      });
     } catch (error) {
       console.error('Save product failed', error);
     }
@@ -1433,11 +1504,42 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
               required
             />
             <Input 
-              label="الباركود (اختياري)" 
-              placeholder="سكاني الباركود هنا..." 
+              label="الباركود (وحدة)" 
+              placeholder="سكاني الباركود ديال الحبة..." 
               value={formData.barcode}
               onChange={e => setFormData({...formData, barcode: e.target.value})}
             />
+
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-3xl border border-slate-100">
+              <div className="space-y-4">
+                <Input 
+                  label="باركود العلبة (Pack)" 
+                  placeholder="سكاني باركود العلبة..." 
+                  value={formData.packBarcode}
+                  onChange={e => setFormData({...formData, packBarcode: e.target.value})}
+                />
+                <Input 
+                  label="عدد الحبات فالعصبة" 
+                  type="number"
+                  value={formData.unitsPerPack}
+                  onChange={e => setFormData({...formData, unitsPerPack: e.target.value})}
+                />
+              </div>
+              <div className="space-y-4">
+                <Input 
+                  label="باركود الكرتونة (Carton)" 
+                  placeholder="سكاني باركود الكرتونة..." 
+                  value={formData.cartonBarcode}
+                  onChange={e => setFormData({...formData, cartonBarcode: e.target.value})}
+                />
+                <Input 
+                  label="عدد الحبات فالكرتونة" 
+                  type="number"
+                  value={formData.unitsPerCarton}
+                  onChange={e => setFormData({...formData, unitsPerCarton: e.target.value})}
+                />
+              </div>
+            </div>
             
             {/* Bulk Barcodes Section */}
             <div className="space-y-3 pt-2 border-t border-slate-100">
