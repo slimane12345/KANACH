@@ -11,11 +11,7 @@ export interface Product {
   costPrice: number;
   stock: number;
   lowStockThreshold: number;
-  barcode?: string; // Unit Barcode
-  packBarcode?: string;
-  cartonBarcode?: string;
-  unitsPerPack?: number;
-  unitsPerCarton?: number;
+  barcode?: string;
   bulkBarcodes?: BulkBarcode[];
   supplierId?: string;
   ownerId: string;

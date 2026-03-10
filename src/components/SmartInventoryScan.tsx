@@ -61,15 +61,6 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
   const bulkBarcodeMap = useMemo(() => {
     const map = new Map<string, { product: Product; quantity: number; label: string }>();
     products.forEach(p => {
-      // Handle specific pack/carton fields
-      if (p.packBarcode && p.unitsPerPack) {
-        map.set(p.packBarcode, { product: p, quantity: p.unitsPerPack, label: 'علبة (Pack)' });
-      }
-      if (p.cartonBarcode && p.unitsPerCarton) {
-        map.set(p.cartonBarcode, { product: p, quantity: p.unitsPerCarton, label: 'كرتونة (Carton)' });
-      }
-      
-      // Handle dynamic bulk barcodes
       if (p.bulkBarcodes) {
         p.bulkBarcodes.forEach(bb => {
           map.set(bb.barcode, { product: p, quantity: bb.quantity, label: bb.label });
