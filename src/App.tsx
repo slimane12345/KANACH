@@ -87,13 +87,13 @@ import {
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Product, BulkBarcode, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification, Supplier, SupplyOrder, SupplyOrderItem } from './types';
+import { Product, Category, BulkBarcode, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification, Supplier, SupplyOrder, SupplyOrderItem } from './types';
 import AdminDashboard from './components/AdminDashboard';
 import CustomerCreditPage from './components/CustomerCreditPage';
 import SubscriptionPage from './components/SubscriptionPage';
 import { QRCodeSVG } from 'qrcode.react';
 import { utils, read, writeFile } from 'xlsx';
-import { FileUp, FileDown, Download } from 'lucide-react';
+import { FileUp, FileDown, Download, Tags } from 'lucide-react';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -186,6 +186,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'sales' | 'products' | 'credits' | 'dashboard' | 'report' | 'subscription' | 'suppliers'>('dashboard');
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [credits, setCredits] = useState<CreditTransaction[]>([]);
@@ -230,6 +231,13 @@ export default function App() {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'products', setMissingIndexUrl);
+    });
+
+    const qCategories = query(collection(db, 'categories'), where('ownerId', '==', user.uid));
+    const unsubCategories = onSnapshot(qCategories, (snapshot) => {
+      setCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'categories', setMissingIndexUrl);
     });
 
     const qSales = query(collection(db, 'sales'), where('ownerId', '==', user.uid), orderBy('createdAt', 'desc'), limit(100));
@@ -328,6 +336,7 @@ export default function App() {
 
     return () => {
       unsubProducts();
+      unsubCategories();
       unsubSales();
       unsubCustomers();
       unsubCredits();
@@ -557,11 +566,11 @@ export default function App() {
           </div>
         )}
         <AnimatePresence mode="wait">
-          {activeTab === 'sales' && <SalesView products={products} sales={sales} customers={customers} user={user} onAddProduct={(barcode) => {
+          {activeTab === 'sales' && <SalesView products={products} categories={categories} sales={sales} customers={customers} user={user} onAddProduct={(barcode) => {
             setPrefilledBarcode(barcode);
             setActiveTab('products');
           }} />}
-          {activeTab === 'products' && <ProductsView products={products} user={user} prefilledBarcode={prefilledBarcode} onClearPrefilled={() => setPrefilledBarcode('')} onOpenSuppliers={(p) => {
+          {activeTab === 'products' && <ProductsView products={products} categories={categories} user={user} prefilledBarcode={prefilledBarcode} onClearPrefilled={() => setPrefilledBarcode('')} onOpenSuppliers={(p) => {
             setPreselectedProductForOrder(p || null);
             setActiveTab('suppliers');
           }} />}
@@ -630,9 +639,10 @@ function NavButton({ active, onClick, icon, label }: { active: boolean; onClick:
 
 // --- Views ---
 
-function SalesView({ products, sales, customers, user, onAddProduct }: { products: Product[]; sales: Sale[]; customers: Customer[]; user: User; onAddProduct: (barcode: string) => void }) {
+function SalesView({ products, categories, sales, customers, user, onAddProduct }: { products: Product[]; categories: Category[]; sales: Sale[]; customers: Customer[]; user: User; onAddProduct: (barcode: string) => void }) {
   const [cart, setCart] = useState<{ [productId: string]: number }>({});
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'qr' | null>(null);
   const [selectedCustomerForCredit, setSelectedCustomerForCredit] = useState<string>('');
@@ -658,25 +668,6 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
     const map = new Map<string, Product>();
     products.forEach(p => {
       if (p.barcode) map.set(p.barcode, p);
-    });
-    return map;
-  }, [products]);
-
-  // Map for bulk barcodes (cartons/boxes)
-  const bulkBarcodeMap = useMemo(() => {
-    const map = new Map<string, { product: Product; quantity: number }>();
-    products.forEach(p => {
-      if (p.packBarcode && p.unitsPerPack) {
-        map.set(p.packBarcode, { product: p, quantity: p.unitsPerPack });
-      }
-      if (p.cartonBarcode && p.unitsPerCarton) {
-        map.set(p.cartonBarcode, { product: p, quantity: p.unitsPerCarton });
-      }
-      if (p.bulkBarcodes) {
-        p.bulkBarcodes.forEach(bb => {
-          map.set(bb.barcode, { product: p, quantity: bb.quantity });
-        });
-      }
     });
     return map;
   }, [products]);
@@ -722,9 +713,11 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
     });
   }, [products, mostSoldIds]);
 
-  const filteredProducts = sortedProducts.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredProducts = sortedProducts.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || p.categoryId === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   const cartItems = Object.entries(cart).map(([id, quantity]) => {
     const product = products.find(p => p.id === id);
@@ -733,10 +726,10 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
 
   const total = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
 
-  const addToCart = (product: Product, quantity: number = 1) => {
+  const addToCart = (product: Product) => {
     setCart(prev => ({
       ...prev,
-      [product.id]: (prev[product.id] || 0) + quantity
+      [product.id]: (prev[product.id] || 0) + 1
     }));
   };
 
@@ -879,26 +872,36 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
         </button>
       </div>
 
+      {/* Category Tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
+        <button 
+          onClick={() => setSelectedCategory('all')}
+          className={cn(
+            "px-6 py-2 rounded-full font-bold whitespace-nowrap transition-all",
+            selectedCategory === 'all' ? "bg-emerald-600 text-white shadow-lg" : "bg-white text-emerald-600 border border-emerald-100"
+          )}
+        >
+          الكل
+        </button>
+        {categories.map(cat => (
+          <button 
+            key={cat.id}
+            onClick={() => setSelectedCategory(cat.id)}
+            className={cn(
+              "px-6 py-2 rounded-full font-bold whitespace-nowrap transition-all",
+              selectedCategory === cat.id ? "bg-emerald-600 text-white shadow-lg" : "bg-white text-emerald-600 border border-emerald-100"
+            )}
+          >
+            {cat.name}
+          </button>
+        ))}
+      </div>
+
       {isScanning && (
         <div className="bg-slate-900 rounded-3xl p-4 mb-4 text-center space-y-4 relative overflow-hidden">
           <BarcodeScanner 
             cooldownMs={500}
             onScan={(barcode) => {
-              const bulkMatch = bulkBarcodeMap.get(barcode);
-              if (bulkMatch) {
-                addToCart(bulkMatch.product, bulkMatch.quantity);
-                playBeep();
-                const newScan = { 
-                  id: Math.random().toString(), 
-                  name: `${bulkMatch.product.name} (x${bulkMatch.quantity})`, 
-                  price: bulkMatch.product.price * bulkMatch.quantity, 
-                  time: Date.now() 
-                };
-                setRecentScans(prev => [newScan, ...prev].slice(0, 3));
-                setScanError(null);
-                return;
-              }
-
               const product = barcodeMap.get(barcode);
               if (product) {
                 addToCart(product);
@@ -979,7 +982,7 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
 
       {/* Product Grid */}
       <div className="flex-1 overflow-y-auto pb-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           <button 
             onClick={() => setShowCustomAdd(true)}
             className="bg-emerald-50 border-2 border-dashed border-emerald-200 p-4 rounded-[32px] flex flex-col items-center justify-center gap-2 text-emerald-600 hover:bg-emerald-100 transition-colors h-32"
@@ -989,10 +992,11 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
           </button>
 
           {filteredProducts.map(product => (
-            <button 
+            <motion.button 
               key={product.id}
+              whileTap={{ scale: 0.95 }}
               onClick={() => addToCart(product)}
-              className="bg-white p-4 rounded-[32px] border border-emerald-50 shadow-sm flex flex-col justify-between items-start active:scale-95 transition-all h-32 relative overflow-hidden group"
+              className="bg-white p-4 rounded-[32px] border border-emerald-50 shadow-sm flex flex-col justify-between items-start transition-all h-32 relative overflow-hidden group"
             >
               <div className="absolute top-0 right-0 p-2 opacity-10 group-active:opacity-30 transition-opacity">
                 <Package className="w-12 h-12" />
@@ -1013,7 +1017,7 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
                   {cart[product.id]}
                 </div>
               )}
-            </button>
+            </motion.button>
           ))}
         </div>
       </div>
@@ -1214,10 +1218,12 @@ function SalesView({ products, sales, customers, user, onAddProduct }: { product
   );
 }
 
-function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOpenSuppliers }: { products: Product[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void; onOpenSuppliers: (p?: Product) => void }) {
+function ProductsView({ products, categories, user, prefilledBarcode, onClearPrefilled, onOpenSuppliers }: { products: Product[]; categories: Category[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void; onOpenSuppliers: (p?: Product) => void }) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [importSummary, setImportSummary] = useState<{ success: number; errors: string[] } | null>(null);
   const [isScanMode, setIsScanMode] = useState(false);
   const [formData, setFormData] = useState({
@@ -1227,10 +1233,7 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
     stock: '',
     lowStockThreshold: '5',
     barcode: '',
-    packBarcode: '',
-    cartonBarcode: '',
-    unitsPerPack: '6',
-    unitsPerCarton: '24',
+    categoryId: '',
     bulkBarcodes: [] as BulkBarcode[]
   });
 
@@ -1251,28 +1254,28 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
         stock: editingProduct.stock.toString(),
         lowStockThreshold: editingProduct.lowStockThreshold.toString(),
         barcode: editingProduct.barcode || '',
-        packBarcode: editingProduct.packBarcode || '',
-        cartonBarcode: editingProduct.cartonBarcode || '',
-        unitsPerPack: (editingProduct.unitsPerPack || 6).toString(),
-        unitsPerCarton: (editingProduct.unitsPerCarton || 24).toString(),
+        categoryId: editingProduct.categoryId || '',
         bulkBarcodes: editingProduct.bulkBarcodes || []
       });
     } else {
-      setFormData({ 
-        name: '', 
-        price: '', 
-        costPrice: '', 
-        stock: '', 
-        lowStockThreshold: '5', 
-        barcode: '', 
-        packBarcode: '',
-        cartonBarcode: '',
-        unitsPerPack: '6',
-        unitsPerCarton: '24',
-        bulkBarcodes: [] 
-      });
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', bulkBarcodes: [] });
     }
   }, [editingProduct]);
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+    try {
+      await addDoc(collection(db, 'categories'), {
+        name: newCategoryName.trim(),
+        ownerId: user.uid
+      });
+      setNewCategoryName('');
+      setIsAddingCategory(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleExport = () => {
     const data = products.map(p => ({
@@ -1363,6 +1366,7 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const selectedCategory = categories.find(c => c.id === formData.categoryId);
       const productData = {
         name: formData.name,
         price: Number(formData.price),
@@ -1370,11 +1374,9 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
         stock: Number(formData.stock),
         lowStockThreshold: Number(formData.lowStockThreshold),
         barcode: formData.barcode,
-        packBarcode: formData.packBarcode,
-        cartonBarcode: formData.cartonBarcode,
-        unitsPerPack: Number(formData.unitsPerPack),
-        unitsPerCarton: Number(formData.unitsPerCarton),
         bulkBarcodes: formData.bulkBarcodes,
+        categoryId: formData.categoryId,
+        categoryName: selectedCategory ? selectedCategory.name : '',
         ownerId: user.uid,
         createdAt: editingProduct ? editingProduct.createdAt : Timestamp.now()
       };
@@ -1386,20 +1388,7 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
         await addDoc(collection(db, 'products'), productData);
         setIsAdding(false);
       }
-      setEditingProduct(null);
-      setFormData({ 
-        name: '', 
-        price: '', 
-        costPrice: '', 
-        stock: '', 
-        lowStockThreshold: '5', 
-        barcode: '', 
-        packBarcode: '',
-        cartonBarcode: '',
-        unitsPerPack: '6',
-        unitsPerCarton: '24',
-        bulkBarcodes: [] 
-      });
+      setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', bulkBarcodes: [] });
     } catch (error) {
       console.error('Save product failed', error);
     }
@@ -1429,6 +1418,9 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-black text-emerald-900">السلعة</h2>
         <div className="flex gap-2">
+          <Button onClick={() => setIsAddingCategory(true)} variant="secondary" className="px-4 py-3 rounded-xl">
+            <Tags className="w-6 h-6" />
+          </Button>
           <Button onClick={() => setIsImporting(true)} variant="secondary" className="px-4 py-3 rounded-xl">
             <FileUp className="w-6 h-6" />
           </Button>
@@ -1443,6 +1435,48 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
           </Button>
         </div>
       </div>
+
+      {isAddingCategory && (
+        <Card className="space-y-4">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-xl font-bold">زيد تصنيف جديد</h3>
+            <button onClick={() => setIsAddingCategory(false)}><XCircle className="text-rose-400" /></button>
+          </div>
+          <form onSubmit={handleAddCategory} className="flex gap-2">
+            <Input 
+              placeholder="مثلا: مشروبات، ألبان..." 
+              value={newCategoryName}
+              onChange={e => setNewCategoryName(e.target.value)}
+              required
+              className="flex-1"
+            />
+            <Button type="submit">زيد</Button>
+          </form>
+
+          {categories.length > 0 && (
+            <div className="pt-4 border-t border-slate-100">
+              <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">التصنيفات اللي كاينين</h4>
+              <div className="flex flex-wrap gap-2">
+                {categories.map(cat => (
+                  <div key={cat.id} className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-2">
+                    {cat.name}
+                    <button 
+                      onClick={async () => {
+                        if (window.confirm('واش متيقن بغيتي تمسح هاد التصنيف؟ السلع اللي فيه غايوليو بدون تصنيف.')) {
+                          await deleteDoc(doc(db, 'categories', cat.id));
+                        }
+                      }}
+                      className="text-emerald-400 hover:text-rose-500 transition-colors"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
 
       {isImporting && (
         <Card className="space-y-6">
@@ -1504,41 +1538,24 @@ function ProductsView({ products, user, prefilledBarcode, onClearPrefilled, onOp
               required
             />
             <Input 
-              label="الباركود (وحدة)" 
-              placeholder="سكاني الباركود ديال الحبة..." 
+              label="الباركود (اختياري)" 
+              placeholder="سكاني الباركود هنا..." 
               value={formData.barcode}
               onChange={e => setFormData({...formData, barcode: e.target.value})}
             />
-
-            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-3xl border border-slate-100">
-              <div className="space-y-4">
-                <Input 
-                  label="باركود العلبة (Pack)" 
-                  placeholder="سكاني باركود العلبة..." 
-                  value={formData.packBarcode}
-                  onChange={e => setFormData({...formData, packBarcode: e.target.value})}
-                />
-                <Input 
-                  label="عدد الحبات فالعصبة" 
-                  type="number"
-                  value={formData.unitsPerPack}
-                  onChange={e => setFormData({...formData, unitsPerPack: e.target.value})}
-                />
-              </div>
-              <div className="space-y-4">
-                <Input 
-                  label="باركود الكرتونة (Carton)" 
-                  placeholder="سكاني باركود الكرتونة..." 
-                  value={formData.cartonBarcode}
-                  onChange={e => setFormData({...formData, cartonBarcode: e.target.value})}
-                />
-                <Input 
-                  label="عدد الحبات فالكرتونة" 
-                  type="number"
-                  value={formData.unitsPerCarton}
-                  onChange={e => setFormData({...formData, unitsPerCarton: e.target.value})}
-                />
-              </div>
+            
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-400 mr-2 uppercase">التصنيف</label>
+              <select 
+                className="w-full p-4 rounded-2xl border border-emerald-100 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg"
+                value={formData.categoryId}
+                onChange={e => setFormData({...formData, categoryId: e.target.value})}
+              >
+                <option value="">بدون تصنيف</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
             </div>
             
             {/* Bulk Barcodes Section */}

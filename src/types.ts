@@ -1,3 +1,9 @@
+export interface Category {
+  id: string;
+  name: string;
+  ownerId: string;
+}
+
 export interface BulkBarcode {
   barcode: string;
   quantity: number;
@@ -11,12 +17,10 @@ export interface Product {
   costPrice: number;
   stock: number;
   lowStockThreshold: number;
-  barcode?: string; // Unit Barcode
-  packBarcode?: string;
-  cartonBarcode?: string;
-  unitsPerPack?: number;
-  unitsPerCarton?: number;
+  barcode?: string;
   bulkBarcodes?: BulkBarcode[];
+  categoryId?: string;
+  categoryName?: string;
   supplierId?: string;
   ownerId: string;
   createdAt: string;
