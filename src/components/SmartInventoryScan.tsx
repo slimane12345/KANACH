@@ -10,7 +10,7 @@ import {
   doc, 
   Timestamp 
 } from 'firebase/firestore';
-import { Product } from '../types';
+import { Product, Category } from '../types';
 import { 
   XCircle, 
   Package, 
@@ -19,16 +19,25 @@ import {
   Smartphone, 
   ArrowLeft,
   Search,
-  AlertCircle
+  AlertCircle,
+  ChevronRight
 } from 'lucide-react';
 import BarcodeScanner from './BarcodeScanner';
 import { motion, AnimatePresence } from 'motion/react';
-import { Button, Card, Input } from '../App'; // Assuming these are exported or I'll need to redefine them
+import { Button, Card, Input } from '../App';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+// Utility for tailwind classes
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 interface SmartInventoryScanProps {
   user: any;
   onFinish: () => void;
   products: Product[];
+  categories: Category[];
 }
 
 interface ScannedItem {
@@ -40,13 +49,19 @@ interface ScannedItem {
   tempPrice?: string;
 }
 
-export default function SmartInventoryScan({ user, onFinish, products }: SmartInventoryScanProps) {
-  const [step, setStep] = useState<'scanning' | 'summary'>('scanning');
+export default function SmartInventoryScan({ user, onFinish, products, categories }: SmartInventoryScanProps) {
+  const [step, setStep] = useState<'category' | 'scanning' | 'summary'>('category');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [showNewProductForm, setShowNewProductForm] = useState<string | null>(null);
   const [newProductData, setNewProductData] = useState({ name: '', price: '', costPrice: '', lowStockThreshold: '5' });
   const [saving, setSaving] = useState(false);
+
+  const selectedCategory = useMemo(() => 
+    categories.find(c => c.id === selectedCategoryId),
+    [categories, selectedCategoryId]
+  );
 
   // Preloaded Product Map for O(1) lookup
   const barcodeMap = useMemo(() => {
@@ -152,6 +167,8 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
             stock: item.quantity,
             lowStockThreshold: 5,
             barcode: item.barcode,
+            categoryId: selectedCategoryId || '',
+            categoryName: selectedCategory ? selectedCategory.name : '',
             ownerId: user.uid,
             createdAt: Timestamp.now()
           });
@@ -169,6 +186,60 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
     }
   };
 
+  if (step === 'category') {
+    return (
+      <div className="fixed inset-0 bg-slate-50 z-[100] flex flex-col">
+        <div className="bg-emerald-600 text-white p-6 flex justify-between items-center shadow-lg">
+          <div className="flex items-center gap-3">
+            <button onClick={onFinish} className="p-2 hover:bg-white/10 rounded-xl">
+              <ArrowLeft className="w-6 h-6" />
+            </button>
+            <h2 className="text-xl font-black">اختار الفئة أولاً</h2>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+          <p className="text-slate-500 font-bold text-sm mb-2">الفئة اللي غاتزاد فيها السلعة الجديدة:</p>
+          <div className="grid grid-cols-1 gap-3">
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  setSelectedCategoryId(cat.id);
+                  setStep('scanning');
+                }}
+                className={cn(
+                  "p-5 rounded-[32px] border-2 text-right flex items-center justify-between transition-all active:scale-95",
+                  selectedCategoryId === cat.id 
+                    ? "bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-100" 
+                    : "bg-white border-emerald-50 text-slate-700 hover:border-emerald-200"
+                )}
+              >
+                <span className="font-black text-lg">{cat.name}</span>
+                <div className={cn(
+                  "p-2 rounded-xl",
+                  selectedCategoryId === cat.id ? "bg-white/20" : "bg-emerald-50 text-emerald-600"
+                )}>
+                  <Plus className="w-5 h-5" />
+                </div>
+              </button>
+            ))}
+            
+            <button
+              onClick={() => {
+                setSelectedCategoryId(null);
+                setStep('scanning');
+              }}
+              className="p-5 rounded-[32px] border-2 border-dashed border-slate-200 text-slate-400 text-center font-bold hover:bg-slate-50 transition-all"
+            >
+              بدون فئة محددة
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (step === 'summary') {
     return (
       <div className="fixed inset-0 bg-slate-50 z-[100] flex flex-col">
@@ -179,6 +250,11 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
             </button>
             <h2 className="text-xl font-black">ملخص الجرد</h2>
           </div>
+          {selectedCategory && (
+            <div className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold">
+              {selectedCategory.name}
+            </div>
+          )}
         </div>
 
         <div className="p-6 space-y-6 flex-1 overflow-y-auto">
@@ -231,10 +307,15 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
       {/* Header */}
       <div className="bg-emerald-600 text-white p-6 flex justify-between items-center shadow-lg">
         <div className="flex items-center gap-3">
-          <button onClick={onFinish} className="p-2 hover:bg-white/10 rounded-xl">
+          <button onClick={() => setStep('category')} className="p-2 hover:bg-white/10 rounded-xl">
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <h2 className="text-xl font-black">جرد السلعة (Scan)</h2>
+          <div className="text-right">
+            <h2 className="text-xl font-black leading-tight">جرد السلعة (Scan)</h2>
+            {selectedCategory && (
+              <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest">الفئة: {selectedCategory.name}</p>
+            )}
+          </div>
         </div>
         <button 
           onClick={() => setStep('summary')}
@@ -370,7 +451,3 @@ export default function SmartInventoryScan({ user, onFinish, products }: SmartIn
   );
 }
 
-// Helper function for tailwind classes (copied from App.tsx)
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
-}

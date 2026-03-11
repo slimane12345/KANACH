@@ -87,7 +87,7 @@ import {
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Product, Category, BulkBarcode, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification, Supplier, SupplyOrder, SupplyOrderItem } from './types';
+import { Product, Category, BulkBarcode, Sale, Customer, CreditTransaction, UserProfile, DailyReport, AppNotification, Supplier, SupplyOrder, SupplyOrderItem, SupplierPayment } from './types';
 import AdminDashboard from './components/AdminDashboard';
 import CustomerCreditPage from './components/CustomerCreditPage';
 import SubscriptionPage from './components/SubscriptionPage';
@@ -195,6 +195,7 @@ export default function App() {
   const [credits, setCredits] = useState<CreditTransaction[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplyOrders, setSupplyOrders] = useState<SupplyOrder[]>([]);
+  const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -278,6 +279,13 @@ export default function App() {
       handleFirestoreError(error, OperationType.GET, 'supply_orders', setMissingIndexUrl);
     });
 
+    const qSupplierPayments = query(collection(db, 'supplier_payments'), where('ownerId', '==', user.uid), orderBy('date', 'desc'));
+    const unsubSupplierPayments = onSnapshot(qSupplierPayments, (snapshot) => {
+      setSupplierPayments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupplierPayment)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'supplier_payments', setMissingIndexUrl);
+    });
+
     const unsubProfile = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -345,6 +353,7 @@ export default function App() {
       unsubCredits();
       unsubSuppliers();
       unsubSupplyOrders();
+      unsubSupplierPayments();
       unsubProfile();
       unsubReport();
     };
@@ -583,7 +592,7 @@ export default function App() {
             setActiveTab('suppliers');
           }} userProfile={userProfile} user={user} />}
           {activeTab === 'report' && <DailyReportView sales={sales} credits={credits} user={user!} />}
-          {activeTab === 'suppliers' && <SuppliersView suppliers={suppliers} supplyOrders={supplyOrders} products={products} user={user!} preselectedProduct={preselectedProductForOrder} onClearPreselected={() => setPreselectedProductForOrder(null)} />}
+          {activeTab === 'suppliers' && <SuppliersView suppliers={suppliers} supplyOrders={supplyOrders} supplierPayments={supplierPayments} products={products} user={user!} preselectedProduct={preselectedProductForOrder} onClearPreselected={() => setPreselectedProductForOrder(null)} />}
           {activeTab === 'subscription' && <SubscriptionPage userProfile={userProfile} onBack={() => setActiveTab('dashboard')} />}
         </AnimatePresence>
       </main>
@@ -1978,9 +1987,12 @@ function CreditsView({ customers, credits, user }: { customers: Customer[]; cred
   const [view, setView] = useState<'list' | 'profile' | 'add-customer'>('list');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isAddingCredit, setIsAddingCredit] = useState(false);
+  const [isAddingPayment, setIsAddingPayment] = useState(false);
+  const [activeProfileTab, setActiveProfileTab] = useState<'credits' | 'payments'>('credits');
   
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '' });
   const [creditForm, setCreditForm] = useState({ amount: '', note: '' });
+  const [paymentForm, setPaymentForm] = useState({ amount: '', note: '' });
 
   const totalGlobalDebt = customers.reduce((acc, curr) => acc + curr.totalDebt, 0);
   const sortedCustomers = [...customers].sort((a, b) => b.totalDebt - a.totalDebt);
@@ -2034,6 +2046,37 @@ function CreditsView({ customers, credits, user }: { customers: Customer[]; cred
     }
   };
 
+  const handleAddPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer) return;
+    const amount = Number(paymentForm.amount);
+    try {
+      await addDoc(collection(db, 'credits'), {
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        amount: amount,
+        note: paymentForm.note,
+        date: Timestamp.now(),
+        status: 'paid',
+        type: 'payment',
+        ownerId: user.uid
+      });
+
+      // Update customer total debt
+      await updateDoc(doc(db, 'customers', selectedCustomer.id), {
+        totalDebt: Math.max(0, selectedCustomer.totalDebt - amount),
+        updatedAt: new Date().toISOString()
+      });
+
+      setIsAddingPayment(false);
+      setPaymentForm({ amount: '', note: '' });
+      const updatedCust = customers.find(c => c.id === selectedCustomer.id);
+      if (updatedCust) setSelectedCustomer(updatedCust);
+    } catch (error) {
+      console.error('Add payment failed', error);
+    }
+  };
+
   const markAsPaid = async (credit: CreditTransaction) => {
     if (!selectedCustomer) return;
     try {
@@ -2049,7 +2092,11 @@ function CreditsView({ customers, credits, user }: { customers: Customer[]; cred
 
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   
-  const customerCredits = credits.filter(c => c.customerId === selectedCustomer?.id);
+  const customerCredits = credits.filter(c => c.customerId === selectedCustomer?.id && c.type !== 'payment' && c.status !== 'paid');
+  const customerPayments = credits.filter(c => c.customerId === selectedCustomer?.id && (c.type === 'payment' || c.status === 'paid'));
+
+  const totalTaken = customerCredits.reduce((sum, t) => sum + t.amount, 0);
+  const totalPaid = customerPayments.reduce((sum, t) => sum + t.amount, 0);
 
   const shareUrl = `${window.location.origin}/credit/${selectedCustomer?.id}`;
 
@@ -2165,13 +2212,28 @@ function CreditsView({ customers, credits, user }: { customers: Customer[]; cred
               >
                 <Share2 className="w-6 h-6" />
               </button>
-              <Button 
-                onClick={() => setIsAddingCredit(true)}
-                variant="primary" 
-                className="bg-emerald-500 hover:bg-emerald-400 px-4 py-3"
-              >
-                <Plus className="w-6 h-6" />
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button 
+                  onClick={() => {
+                    setIsAddingCredit(true);
+                    setIsAddingPayment(false);
+                  }}
+                  variant="primary" 
+                  className="bg-rose-500 hover:bg-rose-400 px-4 py-2 text-sm"
+                >
+                  <PlusCircle className="w-4 h-4" /> تقضية
+                </Button>
+                <Button 
+                  onClick={() => {
+                    setIsAddingPayment(true);
+                    setIsAddingCredit(false);
+                  }}
+                  variant="primary" 
+                  className="bg-emerald-500 hover:bg-emerald-400 px-4 py-2 text-sm"
+                >
+                  <Wallet className="w-4 h-4" /> خلاص
+                </Button>
+              </div>
             </div>
           </Card>
 
@@ -2239,15 +2301,67 @@ function CreditsView({ customers, credits, user }: { customers: Customer[]; cred
             </Card>
           )}
 
+          {isAddingPayment && (
+            <Card className="space-y-4 border-2 border-emerald-500">
+              <div className="flex justify-between items-center">
+                <h4 className="font-bold">سجل خلاص جديد</h4>
+                <button onClick={() => setIsAddingPayment(false)}><XCircle className="text-rose-400" /></button>
+              </div>
+              <form onSubmit={handleAddPayment} className="space-y-4">
+                <Input 
+                  label="المبلغ (DH)" 
+                  type="number" 
+                  value={paymentForm.amount}
+                  onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})}
+                  required
+                />
+                <div className="flex flex-col gap-2 w-full">
+                  <label className="text-sm font-bold text-emerald-800 ml-2">ملاحظة (اختياري)</label>
+                  <textarea 
+                    className="px-4 py-4 rounded-2xl border border-emerald-100 bg-emerald-50/30 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-lg min-h-[80px] resize-none"
+                    placeholder="مثلا: خلص 100 درهم..." 
+                    value={paymentForm.note}
+                    onChange={e => setPaymentForm({...paymentForm, note: e.target.value})}
+                  />
+                </div>
+                <Button type="submit" className="w-full bg-emerald-600">تأكيد الخلاص</Button>
+              </form>
+            </Card>
+          )}
+
+          {/* Tabs for Profile View */}
+          <div className="bg-white p-1 rounded-2xl shadow-sm border border-emerald-50 flex gap-1">
+            <button 
+              onClick={() => setActiveProfileTab('credits')}
+              className={cn(
+                "flex-1 py-3 rounded-xl font-bold text-sm transition-all",
+                activeProfileTab === 'credits' ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-50"
+              )}
+            >
+              السلعة ({totalTaken} DH)
+            </button>
+            <button 
+              onClick={() => setActiveProfileTab('payments')}
+              className={cn(
+                "flex-1 py-3 rounded-xl font-bold text-sm transition-all",
+                activeProfileTab === 'payments' ? "bg-emerald-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-50"
+              )}
+            >
+              الخلاص ({totalPaid} DH)
+            </button>
+          </div>
+
           <div className="space-y-4">
-            <h4 className="font-bold text-emerald-800 ml-2">تاريخ الكريدي</h4>
+            <h4 className="font-bold text-emerald-800 ml-2">
+              {activeProfileTab === 'credits' ? 'تاريخ السلعة' : 'تاريخ الخلاص'}
+            </h4>
             <div className="grid gap-3">
-              {customerCredits.map(credit => (
+              {(activeProfileTab === 'credits' ? customerCredits : customerPayments).map(credit => (
                 <div 
                   key={credit.id}
                   className={cn(
                     "bg-white p-5 rounded-3xl border shadow-sm flex justify-between items-center",
-                    credit.status === 'paid' ? "opacity-50 border-emerald-100" : "border-rose-50"
+                    credit.status === 'paid' ? "border-emerald-100" : "border-rose-50"
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -2267,7 +2381,7 @@ function CreditsView({ customers, credits, user }: { customers: Customer[]; cred
                       </div>
                     </div>
                   </div>
-                  {credit.status === 'unpaid' && (
+                  {activeProfileTab === 'credits' && credit.status === 'unpaid' && (
                     <button 
                       onClick={() => markAsPaid(credit)}
                       className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-xl font-bold text-sm"
@@ -2277,6 +2391,11 @@ function CreditsView({ customers, credits, user }: { customers: Customer[]; cred
                   )}
                 </div>
               ))}
+              {(activeProfileTab === 'credits' ? customerCredits : customerPayments).length === 0 && (
+                <div className="text-center py-8 text-slate-400 italic text-sm">
+                  لا توجد عمليات مسجلة هنا
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2890,22 +3009,32 @@ function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscri
   );
 }
 
-function SuppliersView({ suppliers, supplyOrders, products, user, preselectedProduct, onClearPreselected }: { 
+function SuppliersView({ suppliers, supplyOrders, supplierPayments, products, user, preselectedProduct, onClearPreselected }: { 
   suppliers: Supplier[]; 
   supplyOrders: SupplyOrder[]; 
+  supplierPayments: SupplierPayment[];
   products: Product[]; 
   user: User;
   preselectedProduct?: Product | null;
   onClearPreselected?: () => void;
 }) {
-  const [view, setView] = useState<'list' | 'add' | 'details' | 'new-order'>('list');
+  const [view, setView] = useState<'list' | 'add' | 'details' | 'new-order' | 'edit'>('list');
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [supplierForm, setSupplierForm] = useState({ name: '', company: '', phone: '', address: '' });
   const [orderItems, setOrderItems] = useState<SupplyOrderItem[]>([]);
   const [paidAmount, setPaidAmount] = useState<string>('0');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeDetailsTab, setActiveDetailsTab] = useState<'orders' | 'payments'>('orders');
+  const [isAddingPayment, setIsAddingPayment] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ amount: '', note: '' });
 
   const totalSupplierDebt = suppliers.reduce((acc, curr) => acc + curr.totalDebt, 0);
+
+  const filteredSuppliers = suppliers.filter(s => 
+    s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (s.company && s.company.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   const handleAddSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2973,6 +3102,53 @@ function SuppliersView({ suppliers, supplyOrders, products, user, preselectedPro
     }
   };
 
+  const handleEditSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSupplier) return;
+    try {
+      await updateDoc(doc(db, 'suppliers', selectedSupplier.id), {
+        ...supplierForm,
+        updatedAt: new Date().toISOString()
+      });
+      setView('details');
+      const updated = suppliers.find(s => s.id === selectedSupplier.id);
+      if (updated) setSelectedSupplier(updated);
+    } catch (error) {
+      console.error('Update supplier failed', error);
+    }
+  };
+
+  const handleRecordPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSupplier) return;
+    const amount = Number(paymentForm.amount);
+    if (amount <= 0) return;
+
+    setIsSubmitting(true);
+    try {
+      await addDoc(collection(db, 'supplier_payments'), {
+        supplierId: selectedSupplier.id,
+        amount: amount,
+        note: paymentForm.note,
+        date: Timestamp.now(),
+        ownerId: user.uid
+      });
+
+      await updateDoc(doc(db, 'suppliers', selectedSupplier.id), {
+        totalDebt: increment(-amount)
+      });
+
+      setIsAddingPayment(false);
+      setPaymentForm({ amount: '', note: '' });
+      const updated = suppliers.find(s => s.id === selectedSupplier.id);
+      if (updated) setSelectedSupplier(updated);
+    } catch (error) {
+      console.error('Record payment failed', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const addToOrder = (product: Product) => {
     setOrderItems(prev => {
       const existing = prev.find(item => item.productId === product.id);
@@ -3025,8 +3201,19 @@ function SuppliersView({ suppliers, supplyOrders, products, user, preselectedPro
             <div className="text-5xl font-black">{totalSupplierDebt} <span className="text-xl opacity-60">DH</span></div>
           </Card>
 
+          <div className="relative">
+            <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 w-5 h-5" />
+            <input 
+              type="text" 
+              placeholder="بحث عن مورد..." 
+              className="w-full pr-12 pl-4 py-4 rounded-2xl border border-emerald-100 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-sm"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+
           <div className="space-y-3">
-            {suppliers.map(s => (
+            {filteredSuppliers.map(s => (
               <button 
                 key={s.id} 
                 onClick={() => { setSelectedSupplier(s); setView('details'); }}
@@ -3049,6 +3236,9 @@ function SuppliersView({ suppliers, supplyOrders, products, user, preselectedPro
                 </div>
               </button>
             ))}
+            {filteredSuppliers.length === 0 && (
+              <div className="text-center py-12 text-slate-400 italic">لا يوجد موردين بهذا الاسم</div>
+            )}
           </div>
         </motion.div>
       )}
@@ -3068,9 +3258,38 @@ function SuppliersView({ suppliers, supplyOrders, products, user, preselectedPro
         </motion.div>
       )}
 
+      {view === 'edit' && selectedSupplier && (
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+          <Card className="p-8 space-y-6">
+            <h3 className="text-xl font-black text-slate-900">تعديل معلومات المورد</h3>
+            <form onSubmit={handleEditSupplier} className="space-y-4">
+              <Input label="اسم المورد" value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} required />
+              <Input label="الشركة" value={supplierForm.company} onChange={e => setSupplierForm({...supplierForm, company: e.target.value})} />
+              <Input label="الهاتف" value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} />
+              <Input label="العنوان" value={supplierForm.address} onChange={e => setSupplierForm({...supplierForm, address: e.target.value})} />
+              <Button type="submit" className="w-full py-5">تحديث المعلومات</Button>
+            </form>
+          </Card>
+        </motion.div>
+      )}
+
       {view === 'details' && selectedSupplier && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-          <Card className="p-8 text-center space-y-4">
+          <Card className="p-8 text-center space-y-4 relative">
+            <button 
+              onClick={() => {
+                setSupplierForm({
+                  name: selectedSupplier.name,
+                  company: selectedSupplier.company || '',
+                  phone: selectedSupplier.phone || '',
+                  address: selectedSupplier.address || ''
+                });
+                setView('edit');
+              }}
+              className="absolute left-6 top-6 p-2 text-slate-400 hover:text-emerald-600 transition-colors"
+            >
+              <Pencil className="w-5 h-5" />
+            </button>
             <div className="bg-emerald-50 w-20 h-20 rounded-[32px] flex items-center justify-center mx-auto text-emerald-600">
               <Truck className="w-10 h-10" />
             </div>
@@ -3087,42 +3306,136 @@ function SuppliersView({ suppliers, supplyOrders, products, user, preselectedPro
                 <PlusCircle className="w-5 h-5" />
                 <span>توريد جديد</span>
               </Button>
-              <Button variant="secondary" className="py-4 rounded-2xl text-sm" onClick={() => window.open(`tel:${selectedSupplier.phone}`)}>
-                <Phone className="w-5 h-5" />
-                <span>اتصال</span>
+              <Button 
+                variant="secondary" 
+                className="py-4 rounded-2xl text-sm bg-emerald-50 border-emerald-100 text-emerald-700" 
+                onClick={() => setIsAddingPayment(true)}
+              >
+                <Wallet className="w-5 h-5" />
+                <span>تسجيل خلاص</span>
               </Button>
             </div>
+            {selectedSupplier.phone && (
+              <Button variant="ghost" className="w-full py-3 rounded-2xl text-sm" onClick={() => window.open(`tel:${selectedSupplier.phone}`)}>
+                <Phone className="w-4 h-4" />
+                <span>اتصال بالمورد: {selectedSupplier.phone}</span>
+              </Button>
+            )}
           </Card>
 
+          {isAddingPayment && (
+            <Card className="p-6 space-y-4 border-2 border-emerald-500">
+              <div className="flex justify-between items-center">
+                <h4 className="font-black text-slate-900">تسجيل خلاص للمورد</h4>
+                <button onClick={() => setIsAddingPayment(false)} className="text-slate-400"><XCircle className="w-6 h-6" /></button>
+              </div>
+              <form onSubmit={handleRecordPayment} className="space-y-4">
+                <Input 
+                  label="المبلغ المدفوع (DH)" 
+                  type="number" 
+                  value={paymentForm.amount} 
+                  onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})} 
+                  required 
+                />
+                <Input 
+                  label="ملاحظة" 
+                  value={paymentForm.note} 
+                  onChange={e => setPaymentForm({...paymentForm, note: e.target.value})} 
+                  placeholder="مثلا: خلاص شيك رقم..."
+                />
+                <Button type="submit" className="w-full py-4" disabled={isSubmitting}>
+                  {isSubmitting ? 'جاري الحفظ...' : 'تأكيد الخلاص'}
+                </Button>
+              </form>
+            </Card>
+          )}
+
+          <div className="bg-white p-1 rounded-2xl shadow-sm border border-emerald-50 flex gap-1">
+            <button 
+              onClick={() => setActiveDetailsTab('orders')}
+              className={cn(
+                "flex-1 py-3 rounded-xl font-bold text-sm transition-all",
+                activeDetailsTab === 'orders' ? "bg-emerald-600 text-white shadow-md" : "text-slate-400 hover:bg-slate-50"
+              )}
+            >
+              التوريدات
+            </button>
+            <button 
+              onClick={() => setActiveDetailsTab('payments')}
+              className={cn(
+                "flex-1 py-3 rounded-xl font-bold text-sm transition-all",
+                activeDetailsTab === 'payments' ? "bg-emerald-600 text-white shadow-md" : "text-slate-400 hover:bg-slate-50"
+              )}
+            >
+              الأداءات
+            </button>
+          </div>
+
           <div className="space-y-4">
-            <h4 className="font-black text-slate-800 ml-2">تاريخ التوريدات</h4>
-            {supplyOrders.filter(o => o.supplierId === selectedSupplier.id).map(order => (
-              <Card key={order.id} className="p-5 space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-bold text-slate-800">{format(order.createdAt.toDate(), 'dd/MM/yyyy')}</div>
-                    <div className="text-xs text-slate-400">{order.items.length} سلع</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-black text-emerald-600">{order.totalCost} DH</div>
-                    <div className={cn(
-                      "text-[10px] font-bold px-2 py-0.5 rounded-full inline-block",
-                      order.paymentStatus === 'paid' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
-                    )}>
-                      {order.paymentStatus === 'paid' ? 'خالص' : 'باقي الكريدي'}
+            <h4 className="font-black text-slate-800 ml-2">
+              {activeDetailsTab === 'orders' ? 'تاريخ التوريدات' : 'تاريخ الأداءات'}
+            </h4>
+            
+            {activeDetailsTab === 'orders' ? (
+              <div className="space-y-4">
+                {supplyOrders.filter(o => o.supplierId === selectedSupplier.id).map(order => (
+                  <Card key={order.id} className="p-5 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-bold text-slate-800">{format(order.createdAt.toDate(), 'dd/MM/yyyy')}</div>
+                        <div className="text-xs text-slate-400">{order.items.length} سلع</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-black text-emerald-600">{order.totalCost} DH</div>
+                        <div className={cn(
+                          "text-[10px] font-bold px-2 py-0.5 rounded-full inline-block",
+                          order.paymentStatus === 'paid' ? "bg-emerald-100 text-emerald-600" : 
+                          order.paymentStatus === 'partial' ? "bg-amber-100 text-amber-600" : "bg-rose-100 text-rose-600"
+                        )}>
+                          {order.paymentStatus === 'paid' ? 'خالص' : 
+                           order.paymentStatus === 'partial' ? 'خالص جزئيا' : 'باقي الكريدي'}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <div className="border-t border-slate-50 pt-3 space-y-1">
-                  {order.items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-xs">
-                      <span className="text-slate-500">{item.name} x{item.quantity}</span>
-                      <span className="font-bold text-slate-700">{item.costPrice * item.quantity} DH</span>
+                    <div className="border-t border-slate-50 pt-3 space-y-1">
+                      {order.items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between text-xs">
+                          <span className="text-slate-500">{item.name} x{item.quantity}</span>
+                          <span className="font-bold text-slate-700">{item.costPrice * item.quantity} DH</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </Card>
-            ))}
+                  </Card>
+                ))}
+                {supplyOrders.filter(o => o.supplierId === selectedSupplier.id).length === 0 && (
+                  <div className="text-center py-8 text-slate-400 italic">لا توجد توريدات مسجلة</div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {supplierPayments.filter(p => p.supplierId === selectedSupplier.id).map(payment => (
+                  <Card key={payment.id} className="p-5 flex justify-between items-center border-emerald-100 bg-emerald-50/20">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-emerald-100 p-2 rounded-xl text-emerald-600">
+                        <CheckCircle2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-800">{payment.amount} DH</div>
+                        <div className="text-[10px] text-slate-400 font-bold">{format(payment.date.toDate(), 'dd/MM/yyyy HH:mm')}</div>
+                      </div>
+                    </div>
+                    {payment.note && (
+                      <div className="text-xs text-slate-500 italic max-w-[150px] text-left">
+                        {payment.note}
+                      </div>
+                    )}
+                  </Card>
+                ))}
+                {supplierPayments.filter(p => p.supplierId === selectedSupplier.id).length === 0 && (
+                  <div className="text-center py-8 text-slate-400 italic">لا توجد أداءات مسجلة</div>
+                )}
+              </div>
+            )}
           </div>
         </motion.div>
       )}

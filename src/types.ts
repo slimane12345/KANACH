@@ -186,3 +186,12 @@ export interface SupplyOrder {
   ownerId: string;
   createdAt: any;
 }
+
+export interface SupplierPayment {
+  id: string;
+  supplierId: string;
+  amount: number;
+  note?: string;
+  date: any;
+  ownerId: string;
+}

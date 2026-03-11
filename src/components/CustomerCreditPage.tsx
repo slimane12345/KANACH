@@ -21,6 +21,7 @@ export default function CustomerCreditPage({ customerId }: CustomerCreditPagePro
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [shop, setShop] = useState<UserProfile | null>(null);
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
+  const [activeTab, setActiveTab] = useState<'credits' | 'payments'>('credits');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,12 +57,11 @@ export default function CustomerCreditPage({ customerId }: CustomerCreditPagePro
     const q = query(
       collection(db, 'credits'),
       where('customerId', '==', customerId),
-      limit(50) // Increased limit since we sort client-side
+      limit(100)
     );
 
     const unsubTransactions = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CreditTransaction));
-      // Sort client-side to avoid needing a composite index
       const sorted = docs.sort((a, b) => {
         const dateA = (a.date as any)?.toDate ? (a.date as any).toDate().getTime() : new Date(a.date).getTime();
         const dateB = (b.date as any)?.toDate ? (b.date as any).toDate().getTime() : new Date(b.date).getTime();
@@ -70,8 +70,6 @@ export default function CustomerCreditPage({ customerId }: CustomerCreditPagePro
       setTransactions(sorted);
     }, (err) => {
       console.error("Transactions listener error:", err);
-      // If index is missing, we might want to fallback to a simpler query
-      // but for now we just log it.
     });
 
     return () => {
@@ -79,6 +77,12 @@ export default function CustomerCreditPage({ customerId }: CustomerCreditPagePro
       unsubTransactions();
     };
   }, [customerId]);
+
+  const creditTransactions = transactions.filter(t => t.type !== 'payment' && t.status !== 'paid');
+  const paymentTransactions = transactions.filter(t => t.type === 'payment' || t.status === 'paid');
+
+  const totalTaken = creditTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const totalPaid = paymentTransactions.reduce((sum, t) => sum + t.amount, 0);
 
   if (loading) {
     return (
@@ -130,33 +134,70 @@ export default function CustomerCreditPage({ customerId }: CustomerCreditPagePro
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="bg-white p-2 rounded-3xl shadow-sm border border-emerald-50 flex gap-2">
+          <button 
+            onClick={() => setActiveTab('credits')}
+            className={`flex-1 py-4 rounded-2xl font-black transition-all ${
+              activeTab === 'credits' 
+                ? 'bg-rose-500 text-white shadow-lg shadow-rose-100' 
+                : 'text-slate-400 hover:bg-slate-50'
+            }`}
+          >
+            السلعة (الكريدي)
+          </button>
+          <button 
+            onClick={() => setActiveTab('payments')}
+            className={`flex-1 py-4 rounded-2xl font-black transition-all ${
+              activeTab === 'payments' 
+                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-100' 
+                : 'text-slate-400 hover:bg-slate-50'
+            }`}
+          >
+            الخلاص (الأداء)
+          </button>
+        </div>
+
+        {/* Tab Summary */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white p-4 rounded-3xl border border-emerald-50 text-center">
+            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">مجموع السلعة</p>
+            <p className="text-xl font-black text-rose-600">{totalTaken} DH</p>
+          </div>
+          <div className="bg-white p-4 rounded-3xl border border-emerald-50 text-center">
+            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">مجموع الخلاص</p>
+            <p className="text-xl font-black text-emerald-600">{totalPaid} DH</p>
+          </div>
+        </div>
+
         {/* Transactions list */}
         <div className="space-y-4">
           <h3 className="text-lg font-black px-2 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-emerald-600" />
-            العمليات الأخيرة
+            <TrendingUp className={`w-5 h-5 ${activeTab === 'credits' ? 'text-rose-500' : 'text-emerald-600'}`} />
+            {activeTab === 'credits' ? 'السلعة لي خديتي' : 'الخلاص لي عطيتي'}
           </h3>
           
           <div className="space-y-3">
-            {transactions.length === 0 ? (
+            {(activeTab === 'credits' ? creditTransactions : paymentTransactions).length === 0 ? (
               <div className="bg-white p-12 rounded-[40px] text-center text-slate-400 italic border border-dashed border-slate-200">
                 لا توجد عمليات مسجلة
               </div>
             ) : (
-              transactions.map((t) => {
+              (activeTab === 'credits' ? creditTransactions : paymentTransactions).map((t) => {
                 const tDate = (t.date as any)?.toDate ? (t.date as any).toDate() : new Date(t.date);
+                const isPayment = t.type === 'payment' || t.status === 'paid';
                 return (
                   <div key={t.id} className="bg-white p-5 rounded-3xl shadow-sm border border-emerald-50 flex items-center justify-between group active:scale-95 transition-all">
                     <div className="flex items-center gap-4">
                       <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
-                        t.type === 'payment' || t.status === 'paid' 
+                        isPayment 
                           ? 'bg-emerald-100 text-emerald-600' 
                           : 'bg-rose-100 text-rose-600'
                       }`}>
-                        {t.type === 'payment' || t.status === 'paid' ? <ArrowDownRight /> : <ArrowUpRight />}
+                        {isPayment ? <ArrowDownRight /> : <ArrowUpRight />}
                       </div>
                       <div>
-                        <p className="font-bold text-slate-900">{t.type === 'payment' || t.status === 'paid' ? 'خلاص' : 'كريدي جديد'}</p>
+                        <p className="font-bold text-slate-900">{isPayment ? 'خلاص' : 'تقضية جديدة'}</p>
                         {t.note && (
                           <p className="text-sm text-slate-600 mt-1 whitespace-pre-wrap leading-relaxed">
                             {t.note}
@@ -167,9 +208,9 @@ export default function CustomerCreditPage({ customerId }: CustomerCreditPagePro
                     </div>
                     <div className="text-right">
                       <p className={`text-lg font-black ${
-                        t.type === 'payment' || t.status === 'paid' ? 'text-emerald-600' : 'text-rose-600'
+                        isPayment ? 'text-emerald-600' : 'text-rose-600'
                       }`}>
-                        {t.type === 'payment' || t.status === 'paid' ? '-' : '+'}{t.amount} DH
+                        {isPayment ? '-' : '+'}{t.amount} DH
                       </p>
                     </div>
                   </div>

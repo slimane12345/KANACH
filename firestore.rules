@@ -86,6 +86,13 @@ service cloud.firestore {
              data.createdAt is timestamp;
     }
 
+    function isValidSupplierPayment(data) {
+      return data.keys().hasAll(['supplierId', 'amount', 'date', 'ownerId']) &&
+             data.supplierId is string &&
+             data.amount is number &&
+             data.ownerId is string;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -163,6 +170,13 @@ service cloud.firestore {
       allow read: if isDocOwner() || isAdmin();
       allow create: if isNewDocOwner() && isValidSupplyOrder(request.resource.data);
       allow update: if isDocOwner() && isNewDocOwner() && isValidSupplyOrder(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /supplier_payments/{paymentId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isNewDocOwner() && isValidSupplierPayment(request.resource.data);
+      allow update: if false;
       allow delete: if isAdmin();
     }
 
