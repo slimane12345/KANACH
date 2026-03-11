@@ -26,7 +26,11 @@ export const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCap
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
         audio: false
       });
       setStream(mediaStream);
@@ -61,7 +65,7 @@ export const CameraModal: React.FC<CameraModalProps> = ({ isOpen, onClose, onCap
             onCapture(blob);
             onClose();
           }
-        }, 'image/jpeg', 0.8);
+        }, 'image/jpeg', 0.95);
       }
     }
   };

@@ -1,22 +1,47 @@
 import Dexie, { type Table } from 'dexie';
 
-export interface Product {
+export interface Category {
   id?: number;
   name: string;
-  price: number;
-  imageData: Blob | null;
+}
+
+export interface Product {
+  id?: number;
+  barcode?: string;
+  categoryId?: number;
+  name: string | null;
+  price: number | null;
+  image?: string;
+  imageData?: Blob;
   createdAt: number;
 }
 
-export class POSDatabase extends Dexie {
+export class BulkScanDatabase extends Dexie {
+  categories!: Table<Category>;
   products!: Table<Product>;
 
   constructor() {
-    super('POSDatabase');
+    super('BulkScanDB');
     this.version(1).stores({
-      products: '++id, name, price, createdAt'
+      categories: '++id, name',
+      products: '++id, barcode, categoryId, createdAt'
     });
   }
 }
 
-export const db = new POSDatabase();
+export const db = new BulkScanDatabase();
+
+// Initial data helper
+export async function seedDatabase() {
+  const count = await db.categories.count();
+  if (count === 0) {
+    await db.categories.bulkAdd([
+      { name: 'Milk Products' },
+      { name: 'Drinks' },
+      { name: 'Snacks' },
+      { name: 'Oils' },
+      { name: 'Grains' },
+      { name: 'Personal Care' }
+    ]);
+  }
+}
