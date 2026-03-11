@@ -289,6 +289,15 @@ export default function App() {
     const unsubProfile = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
+        
+        // Check for subscription expiry
+        const now = new Date();
+        const endDate = data.subscriptionEndDate?.toDate ? data.subscriptionEndDate.toDate() : new Date(data.subscriptionEndDate);
+        
+        if (endDate < now && data.subscriptionStatus !== 'expired' && data.subscriptionStatus !== 'pending') {
+          updateDoc(doc(db, 'users', user.uid), { subscriptionStatus: 'expired' });
+        }
+
         // Bootstrap admin role if email matches
         if (user.email === 'elegancecom71@gmail.com' && data.role !== 'admin') {
           updateDoc(doc(db, 'users', user.uid), { role: 'admin' });
@@ -2437,7 +2446,8 @@ function SetupView({ user }: { user: User }) {
         referralCode: myReferralCode,
         referredBy: inviterId || null,
         referralCount: 0,
-        subscriptionStatus: 'active',
+        subscriptionStatus: 'trial',
+        subscriptionEndDate: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
         internalCredit: 0,
         createdAt: Timestamp.now()
       });
@@ -2890,20 +2900,26 @@ function DashboardView({ sales, products, customers, onOpenReport, onOpenSubscri
             "w-full p-4 rounded-3xl flex items-center justify-between border-2 transition-all",
             userProfile?.subscriptionStatus === 'active' 
               ? "bg-emerald-50 border-emerald-100 text-emerald-700" 
-              : "bg-rose-50 border-rose-100 text-rose-700 animate-pulse"
+              : userProfile?.subscriptionStatus === 'trial'
+                ? "bg-amber-50 border-amber-100 text-amber-700"
+                : "bg-rose-50 border-rose-100 text-rose-700 animate-pulse"
           )}
         >
           <div className="flex items-center gap-3">
             <div className={cn(
               "p-2 rounded-xl",
-              userProfile?.subscriptionStatus === 'active' ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+              userProfile?.subscriptionStatus === 'active' ? "bg-emerald-500 text-white" : 
+              userProfile?.subscriptionStatus === 'trial' ? "bg-amber-500 text-white" : "bg-rose-500 text-white"
             )}>
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div className="text-right">
               <p className="text-xs font-black uppercase opacity-60">حالة الاشتراك</p>
               <p className="text-sm font-black">
-                {userProfile?.subscriptionStatus === 'active' ? 'حساب مفعل ومحمي' : 'الاشتراك منتهي أو قيد المراجعة'}
+                {userProfile?.subscriptionStatus === 'active' ? 'حساب مفعل ومحمي' : 
+                 userProfile?.subscriptionStatus === 'trial' ? (
+                   `فترة تجريبية: ${Math.max(0, Math.ceil((userProfile.subscriptionEndDate.toDate().getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} أيام متبقية`
+                 ) : 'الاشتراك منتهي أو قيد المراجعة'}
               </p>
             </div>
           </div>

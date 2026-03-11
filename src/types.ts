@@ -69,7 +69,7 @@ export interface UserProfile {
   referralCode?: string;
   referredBy?: string;
   referralCount?: number;
-  subscriptionStatus?: 'active' | 'expired' | 'pending';
+  subscriptionStatus?: 'active' | 'expired' | 'pending' | 'trial';
   subscriptionEndDate?: any;
   trialStartDate?: any;
   trialNotificationSent?: boolean;
@@ -80,7 +80,7 @@ export interface UserProfile {
 export interface Subscription {
   id: string;
   shopId: string;
-  status: 'active' | 'expired' | 'pending';
+  status: 'active' | 'expired' | 'pending' | 'trial';
   startDate: any;
   endDate: any;
   plan: 'monthly';

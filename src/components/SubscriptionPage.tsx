@@ -134,6 +134,7 @@ export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPa
   };
 
   const isExpired = userProfile?.subscriptionStatus === 'expired';
+  const isTrial = userProfile?.subscriptionStatus === 'trial';
   const isPending = userProfile?.subscriptionStatus === 'pending' || proofs.some(p => p.status === 'pending');
 
   return (
@@ -154,12 +155,12 @@ export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPa
         <Card className="overflow-hidden border-none shadow-sm">
           <div className={cn(
             "p-6 text-white flex flex-col items-center text-center space-y-4",
-            isExpired ? "bg-rose-500" : isPending ? "bg-amber-500" : "bg-emerald-500"
+            isExpired ? "bg-rose-500" : isTrial ? "bg-amber-500" : isPending ? "bg-amber-500" : "bg-emerald-500"
           )}>
             <div className="bg-white/20 p-4 rounded-full backdrop-blur-sm">
               {isExpired ? (
                 <AlertCircle className="w-10 h-10" />
-              ) : isPending ? (
+              ) : isTrial || isPending ? (
                 <Clock className="w-10 h-10" />
               ) : (
                 <ShieldCheck className="w-10 h-10" />
@@ -167,10 +168,11 @@ export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPa
             </div>
             <div>
               <h2 className="text-2xl font-black">
-                {isExpired ? 'اشتراك منتهي' : isPending ? 'في انتظار التأكيد' : 'اشتراك مفعل'}
+                {isExpired ? 'اشتراك منتهي' : isTrial ? 'فترة تجريبية' : isPending ? 'في انتظار التأكيد' : 'اشتراك مفعل'}
               </h2>
               <p className="opacity-90 text-sm mt-1">
                 {isExpired ? 'جدد اشتراكك دابا باش تستافد من كاع المميزات' : 
+                 isTrial ? 'كتستافد دابا من فترة تجريبية فابور' :
                  isPending ? 'كنراجعو الطلب ديالك، غادي يتفعل قريبا' : 
                  'حسابك مفعل ومحمي'}
               </p>
@@ -180,14 +182,14 @@ export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPa
           <div className="p-6 bg-white space-y-4">
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-500 font-bold">نوع الخطة:</span>
-              <span className="text-slate-900 font-black">شهري (Monthly)</span>
+              <span className="text-slate-900 font-black">{isTrial ? 'تجريبية (Trial)' : 'شهري (Monthly)'}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-500 font-bold">الثمن:</span>
               <span className="text-emerald-600 font-black">50 درهم / شهر</span>
             </div>
             <div className="flex justify-between items-center text-sm">
-              <span className="text-slate-500 font-bold">تاريخ الانتهاء:</span>
+              <span className="text-slate-500 font-bold">{isTrial ? 'نهاية التجربة:' : 'تاريخ الانتهاء:'}</span>
               <span className="text-slate-900 font-black">
                 {userProfile?.subscriptionEndDate ? format(userProfile.subscriptionEndDate.toDate(), 'dd/MM/yyyy') : '---'}
               </span>
@@ -197,9 +199,9 @@ export default function SubscriptionPage({ userProfile, onBack }: SubscriptionPa
               <Button 
                 onClick={() => setActiveTab('renew')} 
                 className="w-full py-4 mt-2"
-                variant={isExpired ? 'primary' : 'secondary'}
+                variant={isExpired || isTrial ? 'primary' : 'secondary'}
               >
-                {isExpired ? 'تجديد الاشتراك دابا' : 'تمديد الاشتراك'}
+                {isExpired ? 'تجديد الاشتراك دابا' : isTrial ? 'تفعيل الحساب دابا' : 'تمديد الاشتراك'}
               </Button>
             )}
           </div>
