@@ -306,7 +306,7 @@ function SidebarItem({ icon, label, active, onClick, badge }: { icon: React.Reac
         active ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' : 'text-slate-600 hover:bg-slate-100'
       }`}
     >
-      {React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5' })}
+      {React.cloneElement(icon as React.ReactElement, { className: 'w-5 h-5' })}
       <span className="font-bold">{label}</span>
       {badge ? (
         <span className="bg-rose-500 text-white text-[10px] px-2 py-1 rounded-full mr-auto font-black">
@@ -899,7 +899,7 @@ function StatCard({ label, value, icon, color }: { label: string, value: string,
   return (
     <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex-1">
       <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${colors[color]}`}>
-        {React.cloneElement(icon as React.ReactElement<any>, { className: 'w-6 h-6' })}
+        {React.cloneElement(icon as React.ReactElement, { className: 'w-6 h-6' })}
       </div>
       <div className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">{label}</div>
       <div className="text-2xl font-black text-slate-900">{value}</div>

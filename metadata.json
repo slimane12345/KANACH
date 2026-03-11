@@ -1,5 +1,5 @@
 {
-  "name": "BulkScan POS",
-  "description": "Category-based bulk barcode scanner for small shop owners with offline support.",
+  "name": "POS Product Manager",
+  "description": "A POS application feature for small shop owners to manage products with image uploads, camera support, and local storage.",
   "requestFramePermissions": ["camera"]
 }

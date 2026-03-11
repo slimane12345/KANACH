@@ -1010,28 +1010,22 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
                 key={`top-${product.id}`}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => addToCart(product)}
-                className="bg-white border border-emerald-100 rounded-[32px] shadow-sm min-w-[160px] text-right flex flex-col h-48 relative overflow-hidden group hover:border-emerald-500 transition-colors"
+                className="bg-white border border-emerald-100 p-4 rounded-[32px] shadow-sm min-w-[140px] text-right flex flex-col justify-between h-32 relative overflow-hidden group hover:border-emerald-500 transition-colors"
               >
-                <div className="h-2/3 w-full relative overflow-hidden bg-zinc-100">
-                  {product.localImageId || product.imageUrl ? (
-                    product.localImageId ? (
-                      <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} />
-                    ) : (
-                      <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    )
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-zinc-300">
-                      <Package size={24} />
-                    </div>
-                  )}
-                </div>
-                <div className="p-3 flex-1 flex flex-col justify-between">
-                  <div className="font-black text-sm leading-tight text-slate-800 truncate">{product.name}</div>
-                  <div className="flex justify-between items-end">
-                    <div className="font-black text-lg text-emerald-600">{product.price} DH</div>
-                    <div className="bg-emerald-50 text-emerald-600 p-1 rounded-lg">
-                      <Zap className="w-3 h-3 fill-emerald-600" />
-                    </div>
+                {product.imageUrl ? (
+                  <div className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  </div>
+                ) : (
+                  <div className="absolute -top-2 -right-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <Sparkles className="w-16 h-16 text-emerald-600" />
+                  </div>
+                )}
+                <div className="font-black text-lg leading-tight text-slate-800 z-10">{product.name}</div>
+                <div className="flex justify-between items-end">
+                  <div className="font-black text-xl text-emerald-600">{product.price} DH</div>
+                  <div className="bg-emerald-50 text-emerald-600 p-1.5 rounded-xl">
+                    <Zap className="w-3 h-3 fill-emerald-600" />
                   </div>
                 </div>
               </motion.button>
@@ -1040,8 +1034,9 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
         </div>
       )}
 
+      {/* Product Grid */}
       <div className="flex-1 overflow-y-auto pb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           <button 
             onClick={() => setShowCustomAdd(true)}
             className="bg-emerald-50 border-2 border-dashed border-emerald-200 p-4 rounded-[32px] flex flex-col items-center justify-center gap-2 text-emerald-600 hover:bg-emerald-100 transition-colors h-32"
@@ -1053,48 +1048,39 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
           {filteredProducts.map(product => (
             <motion.button 
               key={product.id}
-              whileTap={{ scale: 0.98 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => addToCart(product)}
               className={cn(
-                "bg-white rounded-[32px] border-2 shadow-xl flex flex-col overflow-hidden transition-all group relative aspect-square",
-                lastAddedId === product.id ? "border-emerald-500 ring-4 ring-emerald-500/20" : "border-transparent"
+                "bg-white p-4 rounded-[32px] border shadow-sm flex flex-col justify-between items-start transition-all h-32 relative overflow-hidden group",
+                lastAddedId === product.id ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-emerald-50"
               )}
             >
-              {/* Full Image Background */}
-              <div className="absolute inset-0 w-full h-full">
-                {product.localImageId || product.imageUrl ? (
-                  product.localImageId ? (
+              {product.localImageId || product.imageUrl ? (
+                <div className="absolute inset-0 opacity-10 group-active:opacity-30 transition-opacity">
+                  {product.localImageId ? (
                     <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} />
                   ) : (
-                    <img src={product.imageUrl} alt="" className="w-full h-full object-cover" loading="eager" referrerPolicy="no-referrer" />
-                  )
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-zinc-100 text-zinc-300">
-                    <Package size={48} />
-                  </div>
-                )}
+                    <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  )}
+                </div>
+              ) : (
+                <div className="absolute top-0 right-0 p-2 opacity-10 group-active:opacity-30 transition-opacity">
+                  <Package className="w-12 h-12" />
+                </div>
+              )}
+              <div className="font-black text-slate-800 text-lg leading-tight text-left w-full truncate z-10">
+                {product.name}
               </div>
-
-              {/* Glass Overlay for Details */}
-              <div className="absolute inset-x-0 bottom-0 p-4 bg-black/40 backdrop-blur-md border-t border-white/20">
-                <div className="flex justify-between items-end">
-                  <div className="space-y-0.5 text-right">
-                    <div className="font-black text-white text-lg leading-tight drop-shadow-md">
-                      {product.name}
-                    </div>
-                    <div className="text-emerald-400 font-black text-xl drop-shadow-md">
-                      {product.price} <span className="text-xs opacity-80">DH</span>
-                    </div>
-                  </div>
-                  <div className="bg-emerald-500 text-white p-2 rounded-2xl shadow-lg">
-                    <Plus size={20} strokeWidth={3} />
-                  </div>
+              <div className="flex justify-between items-end w-full">
+                <div className="text-emerald-600 font-black text-xl">
+                  {product.price} <span className="text-xs font-bold opacity-60">DH</span>
+                </div>
+                <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl">
+                  <Plus className="w-4 h-4" />
                 </div>
               </div>
-
-              {/* Quantity Badge */}
               {cart[product.id] && (
-                <div className="absolute top-4 right-4 bg-rose-500 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shadow-2xl z-20 border-2 border-white">
+                <div className="absolute top-2 right-2 bg-rose-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-lg">
                   {cart[product.id]}
                 </div>
               )}
@@ -1366,20 +1352,7 @@ const LocalProductImage = ({ localImageId, fallbackIcon: Icon }: { localImageId?
   }, [localImageId]);
 
   if (url) {
-    return (
-      <img 
-        src={url} 
-        alt="Product" 
-        className="w-full h-full object-cover contrast-[1.05] brightness-[1.02] transition-transform duration-500 group-hover:scale-110" 
-        style={{ 
-          imageRendering: 'high-quality',
-          WebkitBackfaceVisibility: 'hidden',
-          backfaceVisibility: 'hidden'
-        }} 
-        decoding="async"
-        referrerPolicy="no-referrer" 
-      />
-    );
+    return <img src={url} alt="Product" className="w-full h-full object-cover rounded-2xl" referrerPolicy="no-referrer" />;
   }
 
   return <Icon className="w-6 h-6" />;
@@ -1413,10 +1386,9 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
   const processImage = async (file: Blob) => {
     try {
       const options = {
-        maxSizeMB: 1.5,
-        maxWidthOrHeight: 1600,
+        maxSizeMB: 0.5,
+        maxWidthOrHeight: 800,
         useWebWorker: true,
-        initialQuality: 0.95,
       };
       const compressedFile = await imageCompression(file as File, options);
       setImageBlob(compressedFile);
@@ -1634,7 +1606,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
   };
 
   if (isScanMode) {
-    return <SmartInventoryScan user={user} products={products} categories={categories} onFinish={() => setIsScanMode(false)} />;
+    return <SmartInventoryScan user={user} products={products} onFinish={() => setIsScanMode(false)} />;
   }
 
   return (
@@ -1943,8 +1915,8 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
             )}>
               <div className="flex items-center gap-4">
                 <div className={cn(
-                  "w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden shrink-0 border-2",
-                  isLowStock ? "bg-rose-100 text-rose-600 border-rose-200" : "bg-emerald-100 text-emerald-600 border-emerald-200"
+                  "w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden shrink-0",
+                  isLowStock ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"
                 )}>
                   <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} />
                 </div>
