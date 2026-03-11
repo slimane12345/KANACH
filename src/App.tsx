@@ -887,21 +887,31 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] -mt-2">
       {/* Search & Scan */}
-      <div className="flex gap-2 mb-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 w-5 h-5" />
+      <div className="flex gap-3 mb-6">
+        <div className="relative flex-1 group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors w-5 h-5" />
           <input 
-            className="w-full pl-12 pr-4 py-4 rounded-2xl border border-emerald-100 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg"
+            className="w-full pl-12 pr-12 py-4 rounded-[24px] border border-slate-100 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-lg font-bold transition-all"
             placeholder="قلب على السلعة..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {search && (
+            <button 
+              onClick={() => setSearch('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
+            >
+              <XCircle className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <button 
           onClick={() => setIsScanning(!isScanning)}
           className={cn(
-            "p-4 rounded-2xl border transition-all active:scale-90",
-            isScanning ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-emerald-100 text-emerald-600 shadow-sm"
+            "p-4 rounded-[24px] border transition-all active:scale-90 shadow-sm",
+            isScanning 
+              ? "bg-emerald-600 border-emerald-600 text-white shadow-emerald-200" 
+              : "bg-white border-slate-100 text-emerald-600 hover:border-emerald-200"
           )}
         >
           <Smartphone className="w-6 h-6" />
@@ -913,8 +923,10 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
         <button 
           onClick={() => setSelectedCategory('all')}
           className={cn(
-            "px-6 py-2 rounded-full font-bold whitespace-nowrap transition-all",
-            selectedCategory === 'all' ? "bg-emerald-600 text-white shadow-lg" : "bg-white text-emerald-600 border border-emerald-100"
+            "px-6 py-2.5 rounded-2xl font-black whitespace-nowrap transition-all text-sm",
+            selectedCategory === 'all' 
+              ? "bg-emerald-600 text-white shadow-lg shadow-emerald-900/10 scale-105" 
+              : "bg-white text-slate-500 border border-slate-100 hover:border-emerald-200 hover:text-emerald-600"
           )}
         >
           الكل
@@ -924,8 +936,10 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
             key={cat.id}
             onClick={() => setSelectedCategory(cat.id)}
             className={cn(
-              "px-6 py-2 rounded-full font-bold whitespace-nowrap transition-all",
-              selectedCategory === cat.id ? "bg-emerald-600 text-white shadow-lg" : "bg-white text-emerald-600 border border-emerald-100"
+              "px-6 py-2.5 rounded-2xl font-black whitespace-nowrap transition-all text-sm",
+              selectedCategory === cat.id 
+                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-900/10 scale-105" 
+                : "bg-white text-slate-500 border border-slate-100 hover:border-emerald-200 hover:text-emerald-600"
             )}
           >
             {cat.name}
@@ -1027,23 +1041,55 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
               <motion.button
                 key={`top-${product.id}`}
                 whileTap={{ scale: 0.95 }}
+                whileHover={{ y: -4 }}
                 onClick={() => addToCart(product)}
-                className="bg-white border border-emerald-100 p-4 rounded-[32px] shadow-sm min-w-[140px] text-right flex flex-col justify-between h-32 relative overflow-hidden group hover:border-emerald-500 transition-colors"
+                className="bg-white border border-emerald-100 rounded-[32px] shadow-sm min-w-[150px] text-right flex flex-col h-44 relative overflow-hidden group hover:border-emerald-500 transition-all hover:shadow-xl hover:shadow-emerald-900/5"
               >
-                {product.imageUrl ? (
-                  <div className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <div className="h-28 w-full relative overflow-hidden bg-slate-50">
+                  {product.localImageId || product.imageUrl ? (
+                    <>
+                      {product.localImageId ? (
+                        <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
+                      ) : (
+                        <motion.img 
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          src={product.imageUrl} 
+                          alt="" 
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" 
+                          referrerPolicy="no-referrer" 
+                        />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60" />
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-emerald-50 to-slate-100 text-emerald-200">
+                      <Package className="w-12 h-12" />
+                    </div>
+                  )}
+                  
+                  {/* Price Tag - Glassmorphism */}
+                  <div className="absolute top-2 left-2 bg-white/70 backdrop-blur-md border border-white/20 text-emerald-900 px-2.5 py-1 rounded-xl text-[11px] font-black shadow-sm z-10">
+                    {product.price} DH
                   </div>
-                ) : (
-                  <div className="absolute -top-2 -right-2 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <Sparkles className="w-16 h-16 text-emerald-600" />
-                  </div>
-                )}
-                <div className="font-black text-lg leading-tight text-slate-800 z-10">{product.name}</div>
-                <div className="flex justify-between items-end">
-                  <div className="font-black text-xl text-emerald-600">{product.price} DH</div>
-                  <div className="bg-emerald-50 text-emerald-600 p-1.5 rounded-xl">
-                    <Zap className="w-3 h-3 fill-emerald-600" />
+
+                  {/* Low Stock Badge */}
+                  {product.stock <= product.lowStockThreshold && (
+                    <div className="absolute top-2 right-2 bg-rose-500/90 backdrop-blur-sm text-white px-2 py-0.5 rounded-lg text-[9px] font-black z-10 flex items-center gap-1">
+                      <AlertTriangle className="w-2.5 h-2.5" />
+                      قليل
+                    </div>
+                  )}
+                </div>
+                <div className="p-3.5 flex-1 flex flex-col justify-between">
+                  <div className="font-black text-sm leading-tight text-slate-800 line-clamp-2 group-hover:text-emerald-700 transition-colors">{product.name}</div>
+                  <div className="flex justify-between items-center">
+                    <div className="text-[10px] font-bold text-slate-400">
+                      {product.stock} فـ الستوك
+                    </div>
+                    <div className="bg-emerald-50 text-emerald-600 p-1.5 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                      <Zap className="w-3.5 h-3.5 fill-current" />
+                    </div>
                   </div>
                 </div>
               </motion.button>
@@ -1067,41 +1113,74 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
             <motion.button 
               key={product.id}
               whileTap={{ scale: 0.95 }}
+              whileHover={{ y: -4 }}
               onClick={() => addToCart(product)}
               className={cn(
-                "bg-white p-4 rounded-[32px] border shadow-sm flex flex-col justify-between items-start transition-all h-32 relative overflow-hidden group",
+                "bg-white rounded-[32px] border shadow-sm flex flex-col transition-all h-52 relative overflow-hidden group hover:shadow-xl hover:shadow-emerald-900/5",
                 lastAddedId === product.id ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-emerald-50"
               )}
             >
-              {product.localImageId || product.imageUrl ? (
-                <div className="absolute inset-0 opacity-10 group-active:opacity-30 transition-opacity">
-                  {product.localImageId ? (
-                    <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} />
-                  ) : (
-                    <img src={product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  )}
+              <div className="h-32 w-full relative overflow-hidden bg-slate-50">
+                {product.localImageId || product.imageUrl ? (
+                  <>
+                    {product.localImageId ? (
+                      <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
+                    ) : (
+                      <motion.img 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        src={product.imageUrl} 
+                        alt="" 
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" 
+                        referrerPolicy="no-referrer" 
+                      />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60" />
+                  </>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-emerald-50/30 text-slate-200">
+                    <Package className="w-14 h-14" />
+                  </div>
+                )}
+                
+                {/* Price Tag - Glassmorphism */}
+                <div className="absolute top-2 left-2 bg-white/70 backdrop-blur-md border border-white/20 text-emerald-900 px-2.5 py-1 rounded-xl text-[11px] font-black shadow-sm z-10">
+                  {product.price} DH
                 </div>
-              ) : (
-                <div className="absolute top-0 right-0 p-2 opacity-10 group-active:opacity-30 transition-opacity">
-                  <Package className="w-12 h-12" />
-                </div>
-              )}
-              <div className="font-black text-slate-800 text-lg leading-tight text-left w-full truncate z-10">
-                {product.name}
+
+                {/* Low Stock Badge */}
+                {product.stock <= product.lowStockThreshold && (
+                  <div className="absolute top-2 right-2 bg-rose-500/90 backdrop-blur-sm text-white px-2 py-0.5 rounded-lg text-[9px] font-black z-10 flex items-center gap-1">
+                    <AlertTriangle className="w-2.5 h-2.5" />
+                    قليل
+                  </div>
+                )}
+                
+                {cart[product.id] && (
+                  <div className="absolute bottom-2 right-2 bg-rose-500 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shadow-lg z-20 animate-in zoom-in duration-300">
+                    {cart[product.id]}
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between items-end w-full">
-                <div className="text-emerald-600 font-black text-xl">
-                  {product.price} <span className="text-xs font-bold opacity-60">DH</span>
+
+              <div className="p-4 flex-1 flex flex-col justify-between text-right">
+                <div className="font-black text-slate-800 text-sm leading-tight line-clamp-2 group-hover:text-emerald-700 transition-colors">
+                  {product.name}
                 </div>
-                <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl">
-                  <Plus className="w-4 h-4" />
+                <div className="flex justify-between items-end w-full mt-2">
+                  <div className="flex flex-col items-start">
+                    <div className="text-emerald-600 font-black text-xl leading-none">
+                      {product.price} <span className="text-[10px] font-bold opacity-60">DH</span>
+                    </div>
+                    <div className="text-[9px] font-bold text-slate-400 mt-1">
+                      {product.stock} فـ الستوك
+                    </div>
+                  </div>
+                  <div className="bg-emerald-100 text-emerald-600 p-2 rounded-2xl group-hover:bg-emerald-600 group-hover:text-white transition-all group-active:scale-90">
+                    <Plus className="w-4 h-4" />
+                  </div>
                 </div>
               </div>
-              {cart[product.id] && (
-                <div className="absolute top-2 right-2 bg-rose-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-lg">
-                  {cart[product.id]}
-                </div>
-              )}
             </motion.button>
           ))}
         </div>
@@ -1119,45 +1198,49 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
             }}
             exit={{ y: 100, opacity: 0 }}
             className={cn(
-              "bg-white border-t border-emerald-100 rounded-t-[40px] shadow-[0_-10px_40px_rgba(0,0,0,0.05)] p-6 -mx-4 space-y-4 transition-colors",
-              isCartBouncing ? "bg-emerald-50" : "bg-white"
+              "fixed bottom-24 left-4 right-4 z-[90] bg-white/80 backdrop-blur-xl border border-white/40 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-5 space-y-4 transition-all",
+              isCartBouncing ? "bg-emerald-50/90" : "bg-white/80"
             )}
           >
-            <div className="flex justify-between items-center px-2">
-              <div className="flex items-center gap-2">
-                <div className="bg-emerald-100 p-2 rounded-xl text-emerald-600">
+            <div className="flex justify-between items-center px-1">
+              <div className="flex items-center gap-3">
+                <div className="bg-emerald-600 text-white p-2.5 rounded-2xl shadow-lg shadow-emerald-200">
                   <ShoppingCart className="w-5 h-5" />
                 </div>
-                <span className="font-black text-slate-800">{cartItems.length} سلع</span>
+                <div>
+                  <span className="font-black text-slate-900 block leading-none">{cartItems.length} سلع</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">فـ السلة دابا</span>
+                </div>
               </div>
               <div className="text-right">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">المجموع</p>
-                <p className="text-3xl font-black text-emerald-900">{total} DH</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">المجموع الكلي</p>
+                <p className="text-3xl font-black text-emerald-900 leading-none">{total} <span className="text-sm">DH</span></p>
               </div>
             </div>
 
-            {/* Quick Cart List */}
-            <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+            {/* Quick Cart List - Minimalist */}
+            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
               {cartItems.map(item => (
-                <div key={`quick-${item.product.id}`} className="bg-slate-50 border border-slate-100 p-2 rounded-2xl flex items-center gap-3 min-w-[180px]">
+                <div key={`quick-${item.product.id}`} className="bg-white/50 border border-white/60 p-2 rounded-2xl flex items-center gap-3 min-w-[160px] shadow-sm">
+                  <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 shrink-0">
+                    {item.product.localImageId || item.product.imageUrl ? (
+                      item.product.localImageId ? (
+                        <LocalProductImage localImageId={item.product.localImageId} fallbackIcon={Package} className="w-full h-full object-cover" />
+                      ) : (
+                        <img src={item.product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      )
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-300">
+                        <Package className="w-4 h-4" />
+                      </div>
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-slate-800 truncate">{item.product.name}</p>
+                    <p className="text-[10px] font-black text-slate-800 truncate">{item.product.name}</p>
                     <p className="text-[10px] font-black text-emerald-600">{item.product.price * item.quantity} DH</p>
                   </div>
-                  <div className="flex items-center gap-2 bg-white rounded-lg p-0.5 shadow-sm">
-                    <button 
-                      onClick={() => removeFromCart(item.product.id)}
-                      className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-rose-500"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
-                    <span className="font-black text-xs w-3 text-center">{item.quantity}</span>
-                    <button 
-                      onClick={() => addToCart(item.product)}
-                      className="w-6 h-6 flex items-center justify-center text-emerald-600"
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
+                  <div className="bg-emerald-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black">
+                    {item.quantity}
                   </div>
                 </div>
               ))}
@@ -1166,13 +1249,13 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
             <div className="flex gap-3">
               <Button 
                 onClick={() => setIsCheckoutOpen(true)}
-                className="flex-1 py-5 text-xl rounded-[24px]"
+                className="flex-1 py-4 text-lg rounded-[24px] shadow-lg shadow-emerald-200"
               >
                 خلاص دابا
               </Button>
               <button 
                 onClick={() => setCart({})}
-                className="bg-rose-50 text-rose-500 p-5 rounded-[24px] active:scale-90 transition-transform"
+                className="bg-rose-50 text-rose-500 p-4 rounded-[24px] active:scale-90 transition-transform hover:bg-rose-100"
               >
                 <Trash2 className="w-6 h-6" />
               </button>
@@ -1352,7 +1435,7 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
 }
 
 // --- Local Image Component ---
-const LocalProductImage = ({ localImageId, fallbackIcon: Icon }: { localImageId?: string; fallbackIcon: any }) => {
+const LocalProductImage = ({ localImageId, fallbackIcon: Icon, className }: { localImageId?: string; fallbackIcon: any; className?: string }) => {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1370,7 +1453,16 @@ const LocalProductImage = ({ localImageId, fallbackIcon: Icon }: { localImageId?
   }, [localImageId]);
 
   if (url) {
-    return <img src={url} alt="Product" className="w-full h-full object-cover rounded-2xl" referrerPolicy="no-referrer" />;
+    return (
+      <motion.img 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        src={url} 
+        alt="Product" 
+        className={cn("w-full h-full object-cover", className)} 
+        referrerPolicy="no-referrer" 
+      />
+    );
   }
 
   return <Icon className="w-6 h-6" />;
