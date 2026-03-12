@@ -531,7 +531,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#F8FAF9] pb-24 font-sans text-emerald-950">
       {/* Header */}
-      <header className="bg-white border-b border-emerald-50 px-6 py-4 sticky top-0 z-50 flex justify-between items-center shadow-sm">
+      <header className="bg-white border-b border-emerald-50 px-6 py-4 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-emerald-600 p-2 rounded-xl">
             <Package className="w-6 h-6 text-white" />
@@ -887,7 +887,7 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] -mt-2">
+    <div className="flex flex-col space-y-4 -mt-2">
       {/* Search & Scan */}
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1 group">
@@ -1039,7 +1039,7 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
       )}
 
       {/* Product Grid */}
-      <div className="flex-1 overflow-y-auto pb-4">
+      <div className="pb-4">
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
           <button 
             onClick={() => setShowCustomAdd(true)}
