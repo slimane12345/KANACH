@@ -887,11 +887,11 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] -mt-2">
       {/* Search & Scan */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex gap-2 mb-4">
         <div className="relative flex-1 group">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors w-5 h-5" />
           <input 
-            className="w-full pl-12 pr-12 py-4 rounded-[24px] border border-slate-100 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-lg font-bold transition-all"
+            className="w-full pl-12 pr-12 py-3 rounded-[20px] border border-slate-100 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-base font-bold transition-all"
             placeholder="قلب على السلعة..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -908,18 +908,18 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
         <button 
           onClick={() => setIsScanning(!isScanning)}
           className={cn(
-            "p-4 rounded-[24px] border transition-all active:scale-90 shadow-sm",
+            "p-3 rounded-[20px] border transition-all active:scale-90 shadow-sm",
             isScanning 
               ? "bg-emerald-600 border-emerald-600 text-white shadow-emerald-200" 
               : "bg-white border-slate-100 text-emerald-600 hover:border-emerald-200"
           )}
         >
-          <Smartphone className="w-6 h-6" />
+          <Smartphone className="w-5 h-5" />
         </button>
       </div>
 
       {/* Category Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
+      <div className="flex gap-2 overflow-x-auto pb-3 no-scrollbar">
         <button 
           onClick={() => setSelectedCategory('all')}
           className={cn(
@@ -1031,7 +1031,7 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
 
       {/* Product Grid */}
       <div className="flex-1 overflow-y-auto pb-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
           <button 
             onClick={() => setShowCustomAdd(true)}
             className="bg-emerald-50 border-2 border-dashed border-emerald-200 p-4 rounded-[32px] flex flex-col items-center justify-center gap-2 text-emerald-600 hover:bg-emerald-100 transition-colors h-32"
@@ -1129,31 +1129,31 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
             }}
             exit={{ y: 100, opacity: 0 }}
             className={cn(
-              "fixed bottom-24 left-4 right-4 z-[90] bg-white/80 backdrop-blur-xl border border-white/40 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-5 space-y-4 transition-all",
+              "fixed bottom-24 left-4 right-4 z-[90] bg-white/80 backdrop-blur-xl border border-white/40 rounded-[28px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-3 space-y-2 transition-all",
               isCartBouncing ? "bg-emerald-50/90" : "bg-white/80"
             )}
           >
             <div className="flex justify-between items-center px-1">
-              <div className="flex items-center gap-3">
-                <div className="bg-emerald-600 text-white p-2.5 rounded-2xl shadow-lg shadow-emerald-200">
-                  <ShoppingCart className="w-5 h-5" />
+              <div className="flex items-center gap-2">
+                <div className="bg-emerald-600 text-white p-2 rounded-xl shadow-lg shadow-emerald-200">
+                  <ShoppingCart className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="font-black text-slate-900 block leading-none">{cartItems.length} سلع</span>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">فـ السلة دابا</span>
+                  <span className="font-black text-slate-900 block leading-none text-sm">{cartItems.length} سلع</span>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">فـ السلة</span>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">المجموع الكلي</p>
-                <p className="text-3xl font-black text-emerald-900 leading-none">{total} <span className="text-sm">DH</span></p>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">المجموع</p>
+                <p className="text-2xl font-black text-emerald-900 leading-none">{total} <span className="text-xs">DH</span></p>
               </div>
             </div>
 
             {/* Quick Cart List - Minimalist */}
-            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
               {cartItems.map(item => (
-                <div key={`quick-${item.product.id}`} className="bg-white/50 border border-white/60 p-2 rounded-2xl flex items-center gap-3 min-w-[160px] shadow-sm">
-                  <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 shrink-0">
+                <div key={`quick-${item.product.id}`} className="bg-white/50 border border-white/60 p-1.5 rounded-xl flex items-center gap-2 min-w-[130px] shadow-sm">
+                  <div className="w-6 h-6 rounded-lg overflow-hidden bg-slate-100 shrink-0">
                     {item.product.localImageId || item.product.imageUrl ? (
                       item.product.localImageId ? (
                         <LocalProductImage localImageId={item.product.localImageId} fallbackIcon={Package} className="w-full h-full object-cover" />
@@ -1177,18 +1177,18 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
               ))}
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <Button 
                 onClick={() => setIsCheckoutOpen(true)}
-                className="flex-1 py-4 text-lg rounded-[24px] shadow-lg shadow-emerald-200"
+                className="flex-1 py-3 text-base rounded-[20px] shadow-lg shadow-emerald-200"
               >
                 خلاص دابا
               </Button>
               <button 
                 onClick={() => setCart({})}
-                className="bg-rose-50 text-rose-500 p-4 rounded-[24px] active:scale-90 transition-transform hover:bg-rose-100"
+                className="bg-rose-50 text-rose-500 p-3 rounded-[20px] active:scale-90 transition-transform hover:bg-rose-100"
               >
-                <Trash2 className="w-6 h-6" />
+                <Trash2 className="w-5 h-5" />
               </button>
             </div>
           </motion.div>
@@ -1201,25 +1201,25 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
           <motion.div 
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
-            className="bg-white w-full max-w-md rounded-t-[50px] p-8 space-y-8 max-h-[90vh] overflow-y-auto"
+            className="bg-white w-full max-w-md rounded-t-[40px] p-6 space-y-6 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex justify-between items-center">
-              <h3 className="text-2xl font-black text-slate-900">تأكيد الخلاص</h3>
+              <h3 className="text-xl font-black text-slate-900">تأكيد الخلاص</h3>
               <button onClick={() => setIsCheckoutOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl">
                 <XCircle className="w-6 h-6 text-slate-400" />
               </button>
             </div>
 
             {/* Cart Items List */}
-            <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
               {cartItems.map(item => (
                 <div key={item.product.id} className={cn(
-                  "flex justify-between items-center p-4 rounded-2xl",
+                  "flex justify-between items-center p-3 rounded-2xl",
                   item.product.stock < item.quantity ? "bg-red-50 border border-red-200" : "bg-slate-50"
                 )}>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <div className="flex flex-col">
-                      <div className="font-bold text-slate-800">{item.product.name}</div>
+                      <div className="font-bold text-slate-800 text-sm">{item.product.name}</div>
                       {item.product.stock < item.quantity && (
                         <div className="text-red-500 text-[10px] font-bold">
                           الستوك فيه غير {item.product.stock} حبة
