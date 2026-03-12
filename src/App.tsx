@@ -1246,9 +1246,9 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
               </div>
             )}
 
-            <div className="bg-emerald-50 p-6 rounded-3xl flex justify-between items-center">
-              <span className="text-emerald-700 font-bold">المجموع الكلي</span>
-              <span className="text-3xl font-black text-emerald-950">{total} DH</span>
+            <div className="bg-emerald-50 p-4 rounded-2xl flex justify-between items-center">
+              <span className="text-emerald-700 font-bold text-sm">المجموع الكلي</span>
+              <span className="text-xl font-black text-emerald-950">{total} DH</span>
             </div>
 
             {/* Payment Methods */}
@@ -3627,8 +3627,8 @@ function SuppliersView({ suppliers, supplyOrders, supplierPayments, products, us
             {orderItems.length > 0 && (
               <div className="space-y-4 border-t border-slate-50 pt-4">
                 <div className="flex justify-between items-center">
-                  <span className="font-bold text-slate-500">المجموع الكلي:</span>
-                  <span className="text-2xl font-black text-emerald-600">
+                  <span className="font-bold text-slate-500 text-sm">المجموع الكلي:</span>
+                  <span className="text-xl font-black text-emerald-600">
                     {orderItems.reduce((acc, item) => acc + (item.costPrice * item.quantity), 0)} DH
                   </span>
                 </div>
