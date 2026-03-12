@@ -1040,13 +1040,13 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
 
       {/* Product Grid */}
       <div className="flex-1 overflow-y-auto pb-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
           <button 
             onClick={() => setShowCustomAdd(true)}
-            className="bg-emerald-50 border-2 border-dashed border-emerald-200 p-4 rounded-[32px] flex flex-col items-center justify-center gap-2 text-emerald-600 hover:bg-emerald-100 transition-colors h-32"
+            className="bg-emerald-50 border-2 border-dashed border-emerald-200 p-2 rounded-2xl flex flex-col items-center justify-center gap-1 text-emerald-600 hover:bg-emerald-100 transition-colors h-44"
           >
-            <PlusCircle className="w-8 h-8" />
-            <span className="font-bold text-sm">سلعة خرى</span>
+            <PlusCircle className="w-6 h-6" />
+            <span className="font-bold text-xs">سلعة خرى</span>
           </button>
 
           {filteredProducts.map(product => (
@@ -1056,11 +1056,11 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
               whileHover={{ y: -4 }}
               onClick={() => addToCart(product)}
               className={cn(
-                "bg-white rounded-[32px] border shadow-sm flex flex-col transition-all h-52 relative overflow-hidden group hover:shadow-xl hover:shadow-emerald-900/5",
+                "bg-white rounded-2xl border shadow-sm flex flex-col transition-all h-44 relative overflow-hidden group hover:shadow-xl hover:shadow-emerald-900/5",
                 lastAddedId === product.id ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-emerald-50"
               )}
             >
-              <div className="h-32 w-full relative overflow-hidden bg-slate-50">
+              <div className="h-24 w-full relative overflow-hidden bg-slate-50">
                 <LocalProductImage 
                   localImageId={product.localImageId} 
                   imageUrl={product.imageUrl}
@@ -1089,21 +1089,18 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
                 )}
               </div>
 
-              <div className="p-4 flex-1 flex flex-col justify-between text-right">
-                <div className="font-black text-slate-800 text-sm leading-tight line-clamp-2 group-hover:text-emerald-700 transition-colors">
+              <div className="p-2 flex-1 flex flex-col justify-between text-right">
+                <div className="font-bold text-slate-800 text-[11px] leading-tight line-clamp-2 group-hover:text-emerald-700 transition-colors">
                   {product.name}
                 </div>
-                <div className="flex justify-between items-end w-full mt-2">
+                <div className="flex justify-between items-end w-full mt-1">
                   <div className="flex flex-col items-start">
-                    <div className="text-emerald-600 font-black text-xl leading-none">
-                      {product.price} <span className="text-[10px] font-bold opacity-60">DH</span>
-                    </div>
-                    <div className="text-[9px] font-bold text-slate-400 mt-1">
-                      {product.stock} فـ الستوك
+                    <div className="text-emerald-600 font-black text-sm leading-none">
+                      {product.price} <span className="text-[8px] font-bold opacity-60">DH</span>
                     </div>
                   </div>
-                  <div className="bg-emerald-100 text-emerald-600 p-2 rounded-2xl group-hover:bg-emerald-600 group-hover:text-white transition-all group-active:scale-90">
-                    <Plus className="w-4 h-4" />
+                  <div className="bg-emerald-100 text-emerald-600 p-1.5 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-all group-active:scale-90">
+                    <Plus className="w-3 h-3" />
                   </div>
                 </div>
               </div>
