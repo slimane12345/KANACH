@@ -6,7 +6,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import SmartInventoryScan from './components/SmartInventoryScan';
 import BarcodeScanner from './components/BarcodeScanner';
-import { auth, db } from './firebase';
+import { auth, db, storage } from './firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -1052,27 +1053,13 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
               )}
             >
               <div className="h-32 w-full relative overflow-hidden bg-slate-50">
-                {product.localImageId || product.imageUrl ? (
-                  <>
-                    {product.localImageId ? (
-                      <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
-                    ) : (
-                      <motion.img 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        src={product.imageUrl} 
-                        alt="" 
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" 
-                        referrerPolicy="no-referrer" 
-                      />
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60" />
-                  </>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-emerald-50/30 text-slate-200">
-                    <Package className="w-14 h-14" />
-                  </div>
-                )}
+                <LocalProductImage 
+                  localImageId={product.localImageId} 
+                  imageUrl={product.imageUrl}
+                  fallbackIcon={Package} 
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" 
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60" />
                 
                 {/* Price Tag - Glassmorphism */}
                 <div className="absolute top-2 left-2 bg-white/70 backdrop-blur-md border border-white/20 text-emerald-900 px-2.5 py-1 rounded-xl text-[11px] font-black shadow-sm z-10">
@@ -1154,17 +1141,12 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
               {cartItems.map(item => (
                 <div key={`quick-${item.product.id}`} className="bg-white/50 border border-white/60 p-1.5 rounded-xl flex items-center gap-2 min-w-[130px] shadow-sm">
                   <div className="w-6 h-6 rounded-lg overflow-hidden bg-slate-100 shrink-0">
-                    {item.product.localImageId || item.product.imageUrl ? (
-                      item.product.localImageId ? (
-                        <LocalProductImage localImageId={item.product.localImageId} fallbackIcon={Package} className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={item.product.imageUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      )
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-300">
-                        <Package className="w-4 h-4" />
-                      </div>
-                    )}
+                    <LocalProductImage 
+                      localImageId={item.product.localImageId} 
+                      imageUrl={item.product.imageUrl}
+                      fallbackIcon={Package} 
+                      className="w-full h-full object-cover" 
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] font-black text-slate-800 truncate">{item.product.name}</p>
@@ -1366,7 +1348,7 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
 }
 
 // --- Local Image Component ---
-const LocalProductImage = ({ localImageId, fallbackIcon: Icon, className }: { localImageId?: string; fallbackIcon: any; className?: string }) => {
+const LocalProductImage = ({ localImageId, imageUrl, fallbackIcon: Icon, className }: { localImageId?: string; imageUrl?: string; fallbackIcon: any; className?: string }) => {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1383,12 +1365,14 @@ const LocalProductImage = ({ localImageId, fallbackIcon: Icon, className }: { lo
     };
   }, [localImageId]);
 
-  if (url) {
+  const displayUrl = url || imageUrl;
+
+  if (displayUrl) {
     return (
       <motion.img 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        src={url} 
+        src={displayUrl} 
         alt="Product" 
         className={cn("w-full h-full object-cover", className)} 
         referrerPolicy="no-referrer" 
@@ -1396,7 +1380,7 @@ const LocalProductImage = ({ localImageId, fallbackIcon: Icon, className }: { lo
     );
   }
 
-  return <Icon className="w-6 h-6" />;
+  return <Icon className={cn("w-6 h-6", className)} />;
 };
 
 function ProductsView({ products, categories, user, prefilledBarcode, onClearPrefilled, onOpenSuppliers }: { products: Product[]; categories: Category[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void; onOpenSuppliers: (p?: Product) => void }) {
@@ -1593,7 +1577,10 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
       const selectedCategory = categories.find(c => c.id === formData.categoryId);
       
       let localImageId = formData.localImageId;
+      let imageUrl = formData.imageUrl;
+
       if (imageBlob) {
+        // 1. Save to Local DB (for offline/speed)
         const localId = await localDb.products.put({
           name: formData.name,
           price: Number(formData.price),
@@ -1601,6 +1588,15 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
           createdAt: Date.now()
         });
         localImageId = localId.toString();
+
+        // 2. Upload to Firebase Storage (for cross-device sync)
+        try {
+          const storageRef = ref(storage, `products/${user.uid}/${Date.now()}_${formData.name}`);
+          await uploadBytes(storageRef, imageBlob);
+          imageUrl = await getDownloadURL(storageRef);
+        } catch (storageErr) {
+          console.error('Storage upload failed, falling back to local only', storageErr);
+        }
       }
 
       const productData = {
@@ -1610,7 +1606,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
         stock: Number(formData.stock),
         lowStockThreshold: Number(formData.lowStockThreshold),
         barcode: formData.barcode,
-        imageUrl: formData.imageUrl,
+        imageUrl: imageUrl,
         localImageId: localImageId,
         bulkBarcodes: formData.bulkBarcodes,
         categoryId: formData.categoryId,
@@ -1986,7 +1982,11 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
                   "w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden shrink-0",
                   isLowStock ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"
                 )}>
-                  <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} />
+                  <LocalProductImage 
+                    localImageId={product.localImageId} 
+                    imageUrl={product.imageUrl}
+                    fallbackIcon={Package} 
+                  />
                 </div>
                 <div>
                   <div className="font-bold text-lg">{product.name}</div>
