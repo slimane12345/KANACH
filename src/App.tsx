@@ -652,7 +652,7 @@ function NavButton({ active, onClick, icon, label }: { active: boolean; onClick:
         active ? "text-emerald-600 bg-emerald-50" : "text-emerald-300"
       )}
     >
-      {React.cloneElement(icon as React.ReactElement, { className: "w-6 h-6" })}
+      {React.cloneElement(icon as React.ReactElement<any>, { className: "w-6 h-6" })}
       <span className="text-xs font-bold">{label}</span>
     </button>
   );
@@ -948,7 +948,7 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
       </div>
 
       {isScanning && (
-        <div className="bg-slate-900 rounded-3xl p-2 mb-4 text-center relative overflow-hidden h-40">
+        <div className="bg-slate-900 rounded-3xl p-2 mb-4 text-center relative overflow-hidden h-64">
           <BarcodeScanner 
             cooldownMs={800}
             onScan={(barcode) => {
@@ -1026,75 +1026,6 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
           </AnimatePresence>
           
           <Button onClick={() => setIsScanning(false)} variant="ghost" className="text-white hover:bg-white/10 w-full">إيقاف المسح</Button>
-        </div>
-      )}
-
-      {/* Top Products (Most Sold) */}
-      {mostSoldProducts.length > 0 && selectedCategory === 'all' && !search && (
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3 mr-2">
-            <TrendingUp className="w-4 h-4 text-emerald-600" />
-            <h3 className="text-xs font-black text-emerald-900/40 uppercase tracking-widest">الأكثر مبيعاً</h3>
-          </div>
-          <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-            {mostSoldProducts.map(product => (
-              <motion.button
-                key={`top-${product.id}`}
-                whileTap={{ scale: 0.95 }}
-                whileHover={{ y: -4 }}
-                onClick={() => addToCart(product)}
-                className="bg-white border border-emerald-100 rounded-[32px] shadow-sm min-w-[150px] text-right flex flex-col h-44 relative overflow-hidden group hover:border-emerald-500 transition-all hover:shadow-xl hover:shadow-emerald-900/5"
-              >
-                <div className="h-28 w-full relative overflow-hidden bg-slate-50">
-                  {product.localImageId || product.imageUrl ? (
-                    <>
-                      {product.localImageId ? (
-                        <LocalProductImage localImageId={product.localImageId} fallbackIcon={Package} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" />
-                      ) : (
-                        <motion.img 
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          src={product.imageUrl} 
-                          alt="" 
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" 
-                          referrerPolicy="no-referrer" 
-                        />
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60" />
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-emerald-50 to-slate-100 text-emerald-200">
-                      <Package className="w-12 h-12" />
-                    </div>
-                  )}
-                  
-                  {/* Price Tag - Glassmorphism */}
-                  <div className="absolute top-2 left-2 bg-white/70 backdrop-blur-md border border-white/20 text-emerald-900 px-2.5 py-1 rounded-xl text-[11px] font-black shadow-sm z-10">
-                    {product.price} DH
-                  </div>
-
-                  {/* Low Stock Badge */}
-                  {product.stock <= product.lowStockThreshold && (
-                    <div className="absolute top-2 right-2 bg-rose-500/90 backdrop-blur-sm text-white px-2 py-0.5 rounded-lg text-[9px] font-black z-10 flex items-center gap-1">
-                      <AlertTriangle className="w-2.5 h-2.5" />
-                      قليل
-                    </div>
-                  )}
-                </div>
-                <div className="p-3.5 flex-1 flex flex-col justify-between">
-                  <div className="font-black text-sm leading-tight text-slate-800 line-clamp-2 group-hover:text-emerald-700 transition-colors">{product.name}</div>
-                  <div className="flex justify-between items-center">
-                    <div className="text-[10px] font-bold text-slate-400">
-                      {product.stock} فـ الستوك
-                    </div>
-                    <div className="bg-emerald-50 text-emerald-600 p-1.5 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-all">
-                      <Zap className="w-3.5 h-3.5 fill-current" />
-                    </div>
-                  </div>
-                </div>
-              </motion.button>
-            ))}
-          </div>
         </div>
       )}
 
@@ -1476,6 +1407,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
   const [newCategoryName, setNewCategoryName] = useState('');
   const [importSummary, setImportSummary] = useState<{ success: number; errors: string[] } | null>(null);
   const [isScanMode, setIsScanMode] = useState(false);
+  const [isScanningBarcode, setIsScanningBarcode] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -1716,7 +1648,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
   };
 
   if (isScanMode) {
-    return <SmartInventoryScan user={user} products={products} onFinish={() => setIsScanMode(false)} />;
+    return <SmartInventoryScan user={user} products={products} categories={categories} onFinish={() => setIsScanMode(false)} />;
   }
 
   return (
@@ -1755,6 +1687,7 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
           </div>
           <form onSubmit={handleAddCategory} className="flex gap-2">
             <Input 
+              label="سمية التصنيف"
               placeholder="مثلا: مشروبات، ألبان..." 
               value={newCategoryName}
               onChange={e => setNewCategoryName(e.target.value)}
@@ -1848,12 +1781,37 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
               onChange={e => setFormData({...formData, name: e.target.value})}
               required
             />
-            <Input 
-              label="الباركود (اختياري)" 
-              placeholder="سكاني الباركود هنا..." 
-              value={formData.barcode}
-              onChange={e => setFormData({...formData, barcode: e.target.value})}
-            />
+            <div className="relative">
+              <Input 
+                label="الباركود (اختياري)" 
+                placeholder="سكاني الباركود هنا..." 
+                value={formData.barcode}
+                onChange={e => setFormData({...formData, barcode: e.target.value})}
+              />
+              <button
+                type="button"
+                onClick={() => setIsScanningBarcode(!isScanningBarcode)}
+                className={cn(
+                  "absolute left-3 bottom-3 p-2 rounded-xl transition-all",
+                  isScanningBarcode ? "bg-rose-500 text-white" : "bg-emerald-100 text-emerald-600"
+                )}
+              >
+                <ScanLine className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isScanningBarcode && (
+              <div className="bg-slate-900 rounded-3xl p-2 mb-4 text-center relative overflow-hidden h-48">
+                <BarcodeScanner 
+                  cooldownMs={1000}
+                  onScan={(barcode) => {
+                    setFormData(prev => ({ ...prev, barcode }));
+                    setIsScanningBarcode(false);
+                  }}
+                  onError={(error) => console.log(error)}
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-400 mr-2 uppercase">صورة المنتج</label>
               {imagePreview ? (

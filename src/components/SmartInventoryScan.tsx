@@ -331,6 +331,7 @@ export default function SmartInventoryScan({ user, onFinish, products, categorie
         <BarcodeScanner 
           onScan={(barcode) => handleBarcodeScanned(barcode)}
           onError={(error) => console.log(error)}
+          paused={!!showNewProductForm}
         />
       </div>
 

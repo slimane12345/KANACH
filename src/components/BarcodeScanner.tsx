@@ -6,14 +6,26 @@ interface BarcodeScannerProps {
   onScan: (decodedText: string) => void;
   onError?: (error: string) => void;
   cooldownMs?: number;
+  paused?: boolean;
 }
 
-export default function BarcodeScanner({ onScan, onError, cooldownMs = 800 }: BarcodeScannerProps) {
+export default function BarcodeScanner({ onScan, onError, cooldownMs = 800, paused = false }: BarcodeScannerProps) {
   const [isScanned, setIsScanned] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanTime = useRef<number>(0);
+
+  const onScanRef = useRef(onScan);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     const html5QrCode = new Html5Qrcode("reader");
@@ -25,15 +37,20 @@ export default function BarcodeScanner({ onScan, onError, cooldownMs = 800 }: Ba
           { facingMode: "environment" },
           {
             fps: 20,
-            qrbox: { width: 250, height: 150 },
-            aspectRatio: 1.0,
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+              const size = Math.floor(minEdge * 0.7);
+              return { width: size, height: Math.floor(size * 0.6) };
+            },
+            aspectRatio: undefined,
           },
           (decodedText) => {
+            if (paused) return;
             const now = Date.now();
             if (now - lastScanTime.current > cooldownMs) {
               lastScanTime.current = now;
               setIsScanned(true);
-              onScan(decodedText);
+              onScanRef.current(decodedText);
               
               setTimeout(() => {
                 setIsScanned(false);
@@ -41,28 +58,27 @@ export default function BarcodeScanner({ onScan, onError, cooldownMs = 800 }: Ba
             }
           },
           () => {
-            // Silently handle scan errors (common during continuous scanning)
+            // Silently handle scan errors
           }
         );
 
-        // Check if torch is supported
         const track = (html5QrCode as any).getRunningTrack();
-        if (track && track.getCapabilities().torch) {
+        if (track && track.getCapabilities()?.torch) {
           setHasTorch(true);
         }
       } catch (err) {
-        if (onError) onError(err instanceof Error ? err.message : String(err));
+        if (onErrorRef.current) onErrorRef.current(err instanceof Error ? err.message : String(err));
       }
     };
 
     startScanner();
 
     return () => {
-      if (scannerRef.current?.isScanning) {
-        scannerRef.current.stop().catch(console.error);
+      if (html5QrCode.isScanning) {
+        html5QrCode.stop().catch(err => console.error("Error stopping scanner", err));
       }
     };
-  }, [onScan, onError, cooldownMs]);
+  }, [cooldownMs, paused]);
 
   const toggleTorch = async () => {
     if (!scannerRef.current || !hasTorch) return;
