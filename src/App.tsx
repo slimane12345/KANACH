@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import SmartInventoryScan from './components/SmartInventoryScan';
 import BarcodeScanner from './components/BarcodeScanner';
 import { auth, db, storage } from './firebase';
@@ -686,6 +686,7 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
   const [showCustomAdd, setShowCustomAdd] = useState(false);
   const [lastScannedBarcode, setLastScannedBarcode] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const lastScanRef = useRef<{ barcode: string; time: number } | null>(null);
 
   // Preloaded Product Map for O(1) lookup
   const barcodeMap = useMemo(() => {
@@ -951,8 +952,15 @@ function SalesView({ products, categories, sales, customers, user, onAddProduct 
       {isScanning && (
         <div className="bg-slate-900 rounded-3xl p-2 mb-4 text-center relative overflow-hidden h-64">
           <BarcodeScanner 
-            cooldownMs={800}
+            cooldownMs={1200}
             onScan={(barcode) => {
+              const now = Date.now();
+              // Secondary cooldown check to prevent double scans
+              if (lastScanRef.current && lastScanRef.current.barcode === barcode && now - lastScanRef.current.time < 1500) {
+                return;
+              }
+              lastScanRef.current = { barcode, time: now };
+
               const product = barcodeMap.get(barcode);
               if (product) {
                 addToCart(product);
