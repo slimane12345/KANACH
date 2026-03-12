@@ -1393,6 +1393,8 @@ const LocalProductImage = ({ localImageId, imageUrl, fallbackIcon: Icon, classNa
 
 function ProductsView({ products, categories, user, prefilledBarcode, onClearPrefilled, onOpenSuppliers }: { products: Product[]; categories: Category[]; user: User; prefilledBarcode?: string; onClearPrefilled?: () => void; onOpenSuppliers: (p?: Product) => void }) {
   const [isAdding, setIsAdding] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
@@ -1581,39 +1583,69 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
+    setSaveError(null);
+
     try {
+      // Validation
+      const price = Number(formData.price);
+      const costPrice = Number(formData.costPrice);
+      const stock = Number(formData.stock);
+      const lowStockThreshold = Number(formData.lowStockThreshold);
+
+      if (isNaN(price) || isNaN(costPrice) || isNaN(stock) || isNaN(lowStockThreshold)) {
+        throw new Error('عافاك دخل أرقام صحيحة في الثمن والكمية');
+      }
+
       const selectedCategory = categories.find(c => c.id === formData.categoryId);
       
       let localImageId = formData.localImageId;
       let imageUrl = formData.imageUrl;
 
       if (imageBlob) {
-        // 1. Save to Local DB (for offline/speed)
-        const localId = await localDb.products.put({
-          name: formData.name,
-          price: Number(formData.price),
-          imageData: imageBlob,
-          createdAt: Date.now()
-        });
-        localImageId = localId.toString();
-
-        // 2. Upload to Firebase Storage (for cross-device sync)
         try {
-          const storageRef = ref(storage, `products/${user.uid}/${Date.now()}_${formData.name}`);
-          await uploadBytes(storageRef, imageBlob);
-          imageUrl = await getDownloadURL(storageRef);
-        } catch (storageErr) {
-          console.error('Storage upload failed, falling back to local only', storageErr);
+          console.log('Starting image save process...');
+          // 1. Save to Local DB (for offline/speed)
+          const localId = await localDb.products.put({
+            name: formData.name,
+            price: price,
+            imageData: imageBlob,
+            createdAt: Date.now()
+          });
+          localImageId = localId.toString();
+          console.log('Saved to local DB:', localImageId);
+
+          // 2. Upload to Firebase Storage (with 5s timeout)
+          console.log('Starting Firebase Storage upload...');
+          const uploadWithTimeout = async () => {
+            const storageRef = ref(storage, `products/${user.uid}/${Date.now()}_${formData.name}`);
+            await uploadBytes(storageRef, imageBlob);
+            return await getDownloadURL(storageRef);
+          };
+
+          const timeout = new Promise<string>((_, reject) => 
+            setTimeout(() => reject(new Error('Storage timeout')), 5000)
+          );
+
+          try {
+            imageUrl = await Promise.race([uploadWithTimeout(), timeout]);
+            console.log('Firebase Storage upload successful:', imageUrl);
+          } catch (storageErr) {
+            console.warn('Storage upload failed or timed out, continuing with local only:', storageErr);
+          }
+        } catch (err) {
+          console.error('Image processing failed', err);
         }
       }
 
+      console.log('Saving product data to Firestore...');
       const productData = {
-        name: formData.name,
-        price: Number(formData.price),
-        costPrice: Number(formData.costPrice),
-        stock: Number(formData.stock),
-        lowStockThreshold: Number(formData.lowStockThreshold),
-        barcode: formData.barcode,
+        name: formData.name.trim(),
+        price: price,
+        costPrice: costPrice,
+        stock: stock,
+        lowStockThreshold: lowStockThreshold,
+        barcode: formData.barcode.trim(),
         imageUrl: imageUrl,
         localImageId: localImageId,
         bulkBarcodes: formData.bulkBarcodes,
@@ -1624,17 +1656,26 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
       };
 
       if (editingProduct) {
+        console.log('Updating existing product...');
         await updateDoc(doc(db, 'products', editingProduct.id), productData);
+        console.log('Update successful');
         setEditingProduct(null);
       } else {
+        console.log('Adding new product...');
         await addDoc(collection(db, 'products'), productData);
+        console.log('Add successful');
         setIsAdding(false);
       }
+      
       setFormData({ name: '', price: '', costPrice: '', stock: '', lowStockThreshold: '5', barcode: '', categoryId: '', imageUrl: '', localImageId: '', bulkBarcodes: [] });
       setImageBlob(null);
       setImagePreview(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Save product failed', error);
+      setSaveError(error.message || 'وقع مشكل فاش بغينا نحفظو السلعة. عاود جرب مرة أخرى.');
+      handleFirestoreError(error, editingProduct ? OperationType.UPDATE : OperationType.CREATE, 'products');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1966,7 +2007,23 @@ function ProductsView({ products, categories, user, prefilledBarcode, onClearPre
                 required
               />
             </div>
-            <Button type="submit" className="w-full">{editingProduct ? 'تحديث السلعة' : 'حفظ السلعة'}</Button>
+            {saveError && (
+              <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 text-sm font-bold flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                {saveError}
+              </div>
+            )}
+
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>جاري الحفظ...</span>
+                </div>
+              ) : (
+                editingProduct ? 'تحديث السلعة' : 'حفظ السلعة'
+              )}
+            </Button>
           </form>
         </Card>
       )}
